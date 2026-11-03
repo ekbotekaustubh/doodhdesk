@@ -1,0 +1,222 @@
+# Project Specification: DairyFlow Multi-Tenant SaaS (PHP 8.2 & MySQL)
+
+## 1. Project Overview & Business Model
+Build a multi-tenant, mobile-first SaaS web application for milkmen and dairy delivery businesses.
+- **Problem Solved:** Eradicates billing disputes by tracking missed deliveries in real-time and excluding them from monthly invoices.
+- **Tenancy Architecture:** Single-database multi-tenant structure using a `tenant_id` column on all tenant-scoped tables to ensure strict data isolation.
+- **SaaS Subscription Tiering (Global Config):**
+  - **Free Tier:** Up to 5 active customers per milkman.
+  - **Paid Tier:** Configurable blocks (e.g., ₹200 for every additional 100 customers).
+  - Configurable parameters (`free_customer_limit`, `paid_tier_unit_size`, `paid_tier_unit_price`) managed via Super-Admin settings.
+- **Tenant-Level Settings (Charges & Taxes):**
+  - Each milkman can configure their own custom surcharges (e.g., Delivery/Transport Fee, Bottle Maintenance, Bottle Deposit) and local Taxes (e.g., GST/VAT rate %).
+  - Milkman can choose whether surcharges are flat per month, per delivery day, or per liter.
+  - Taxes can be enabled/disabled and calculated on the subtotal.
+
+---
+
+## 2. Tech Stack & Environment
+- **Language/Runtime:** PHP 8.2+ (Strict types `declare(strict_types=1);`, Enums, Readonly properties, Match expressions)
+- **Database:** MySQL 8.0+ / MariaDB 10.5+ (Strict foreign keys, multi-tenant composite indexes)
+- **Frontend / UI:** 
+  - Tailwind CSS or Bootstrap 5 (Mobile-first, high sunlight contrast, thumb-friendly tap targets)
+  - Alpine.js or HTMX for instant, zero-reload AJAX delivery toggling
+- **Printing / PDF:** Print-optimized CSS (`@media print`) and DomPDF/mPDF supporting 80mm/58mm thermal receipts and standard A4 invoices.
+
+---
+
+## 3. Settings Architecture (Global vs. Tenant-Level)
+
+### A. Global SaaS Settings (Super-Admin Level)
+Managed via a `system_settings` table to govern the SaaS platform rules:
+- `free_customer_limit` (Default: `5`)
+- `paid_tier_unit_size` (Default: `100`)
+- `paid_tier_unit_price` (Default: `200.00`)
+- `currency_symbol` (Default: `₹`)
+
+### B. Milkman Business Settings (`tenant_settings` Table)
+A dedicated settings screen inside the milkman portal allowing them to configure:
+1. **Tax Configuration:**
+   - `tax_enabled` (Boolean: true/false)
+   - `tax_label` (e.g., "GST", "VAT", "Sales Tax")
+   - `tax_percentage` (e.g., `5.00`%)
+   - `tax_number` (e.g., GSTIN / VAT ID to print on bills)
+2. **Additional Charges / Surcharges:**
+   - Multiple custom charge rows:
+     - `charge_name` (e.g., "Monthly Delivery Charge", "Glass Bottle Maintenance Fee")
+     - `charge_type` (Enum: `flat_monthly`, `per_liter`, `per_delivery_day`)
+     - `charge_amount` (Decimal: e.g., `50.00`)
+     - `is_active` (Boolean)
+3. **Business Profile & Branding:**
+   - Dairy/Business Name, Phone, Address
+   - UPI ID & QR Code upload (for automatic placement on printed bills)
+
+---
+
+## 4. Core Functional Modules
+
+### Module 1: Daily Delivery Tracker (Core Anti-Error Engine)
+- **Mobile Daily Run-Sheet:**
+  - Date & Shift selector (Morning / Evening).
+  - Quick-action buttons:
+    - `[Delivered]` (Green)
+    - `[Missed / Skipped]` (Red)
+    - `[Customer On Leave]` (Auto-greyed out)
+    - `[Quantity Edit]` (Quick adjustment for extra/less milk on that day).
+- **Delivery Alerts:**
+  - Notification banner showing pending unverified houses before the shift closes.
+  - Zero-charge rule: Missed or paused days are strictly logged with 0 quantity billed.
+
+### Module 2: Billing & Invoice Engine (Incorporating Taxes & Charges)
+- **Invoice Calculation Formula:**
+  1. $\text{Base Milk Subtotal} = \sum (\text{Actual Delivered Liters} \times \text{Customer Rate})$
+  2. $\text{Additional Charges} = \sum (\text{Active Custom Charges based on flat/per-liter/per-day rules})$
+  3. $\text{Tax Amount} = (\text{Base Subtotal} + \text{Taxable Charges}) \times \left(\frac{\text{Tax \%}}{100}\right)$
+  4. $\text{Total Payable} = \text{Base Subtotal} + \text{Additional Charges} + \text{Tax Amount} + \text{Previous Balance} - \text{Payments Received}$
+
+- **Printable Invoices (Thermal & A4):**
+  - Itemized table of delivery days vs skipped days.
+  - Breakdown showing:
+    - Milk Total
+    - Line item for each active additional charge (e.g., "Delivery Charge: ₹50.00")
+    - Line item for Tax (e.g., "GST (5%): ₹45.00" + GSTIN number)
+    - Previous balance / Advance adjustments
+    - Final Amount Due
+  - Milkman's UPI payment QR code at the bottom.
+
+### Module 3: Customer Quota & Subscription Guard
+- Check before creating a new customer:
+  `Total Active Customers < (Free Limit + Purchased Capacity)`
+- Trigger upgrade paywall modal if the limit is exceeded.
+
+---
+
+## 5. MySQL Database Schema Requirements
+
+Generate complete, production-ready SQL DDL migration scripts:
+
+```sql
+-- Global Platform Settings
+CREATE TABLE system_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(50) UNIQUE NOT NULL,
+    setting_value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Tenants (Milkmen / Dairies)
+CREATE TABLE tenants (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    business_name VARCHAR(150) NOT NULL,
+    owner_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    status ENUM('active', 'suspended') DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Milkman Business Settings (Taxes, Branding, Invoice Info)
+CREATE TABLE tenant_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    tax_enabled TINYINT(1) DEFAULT 0,
+    tax_label VARCHAR(50) DEFAULT 'GST',
+    tax_percentage DECIMAL(5, 2) DEFAULT 0.00,
+    tax_number VARCHAR(100) NULL,
+    upi_id VARCHAR(100) NULL,
+    upi_qr_path VARCHAR(255) NULL,
+    invoice_footer_note TEXT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_tenant_setting (tenant_id)
+);
+
+-- Milkman Custom Additional Charges
+CREATE TABLE tenant_additional_charges (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    charge_name VARCHAR(100) NOT NULL,
+    charge_type ENUM('flat_monthly', 'per_liter', 'per_delivery_day') DEFAULT 'flat_monthly',
+    amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    is_taxable TINYINT(1) DEFAULT 0,
+    is_active TINYINT(1) DEFAULT 1,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    INDEX idx_tenant_charges (tenant_id, is_active)
+);
+
+-- Tenant Subscriptions (Quota limits)
+CREATE TABLE tenant_subscriptions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    purchased_blocks INT DEFAULT 0,
+    max_customers_allowed INT DEFAULT 5,
+    amount_paid DECIMAL(10, 2) DEFAULT 0.00,
+    valid_until DATE NULL,
+    payment_status ENUM('active', 'expired', 'free') DEFAULT 'free',
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+-- Customers
+CREATE TABLE customers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    address TEXT,
+    route_name VARCHAR(50) DEFAULT 'Main Route',
+    default_quantity DECIMAL(6, 2) NOT NULL DEFAULT 1.00,
+    rate_per_unit DECIMAL(10, 2) NOT NULL,
+    status ENUM('active', 'inactive') DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    INDEX idx_tenant_customer (tenant_id, status)
+);
+
+-- Customer Leaves / Vacations
+CREATE TABLE customer_leaves (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    customer_id INT NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+);
+
+-- Daily Delivery Tracking
+CREATE TABLE daily_deliveries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    customer_id INT NOT NULL,
+    delivery_date DATE NOT NULL,
+    shift ENUM('morning', 'evening') DEFAULT 'morning',
+    quantity DECIMAL(6, 2) NOT NULL DEFAULT 0.00,
+    status ENUM('delivered', 'skipped', 'leave') NOT NULL,
+    notes VARCHAR(255) NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_delivery (tenant_id, customer_id, delivery_date, shift),
+    INDEX idx_delivery_date (tenant_id, delivery_date)
+);
+
+-- Invoices
+CREATE TABLE invoices (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    customer_id INT NOT NULL,
+    billing_month TINYINT NOT NULL,
+    billing_year SMALLINT NOT NULL,
+    total_units DECIMAL(10, 2) NOT NULL,
+    milk_subtotal DECIMAL(10, 2) NOT NULL,
+    additional_charges_total DECIMAL(10, 2) DEFAULT 0.00,
+    tax_amount DECIMAL(10, 2) DEFAULT 0.00,
+    previous_balance DECIMAL(10, 2) DEFAULT 0.00,
+    final_amount DECIMAL(10, 2) NOT NULL,
+    payment_status ENUM('unpaid', 'paid', 'partial') DEFAULT 'unpaid',
+    breakdown_json JSON NULL,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+);
