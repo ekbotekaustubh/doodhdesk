@@ -180,13 +180,13 @@ final class ProductService
             }
         }
 
-        // Keep legacy customers table updated for backward compatibility
+        // Keep customer milk_types updated
         $milkTypesStr = !empty($activeCodes) ? implode(',', array_unique($activeCodes)) : 'cow';
         $this->db->execute(
             "UPDATE customers 
-             SET milk_types = ?, default_quantity = ?, rate_per_unit = ?
+             SET milk_types = ?
              WHERE id = ? AND tenant_id = ?",
-            [$milkTypesStr, $totalQty > 0 ? $totalQty : 1.0, $primaryRate > 0 ? $primaryRate : 60.0, $customerId, $tenantId]
+            [$milkTypesStr, $customerId, $tenantId]
         );
     }
 

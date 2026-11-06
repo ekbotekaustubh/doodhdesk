@@ -131,7 +131,7 @@ runTest("Customer Quota Guard: Free Tier 5-Limit Enforcement", function() use ($
     }
 
     // Add 5th customer to fill quota
-    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, default_quantity, rate_per_unit, status) VALUES (2, 'Fifth Test Customer', '9999900005', 'Test Address', 1.0, 60.0, 'active')");
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, status) VALUES (2, 'Fifth Test Customer', '9999900005', 'Test Address', 'active')");
 
     $quotaFull = $quotaService->getTenantQuota(2);
     if ($quotaFull['active_customers'] !== 5 || $quotaFull['can_add'] !== false) {
@@ -208,8 +208,8 @@ runTest("Customer Milk Type Multiselect: Cow Milk, Buffalo Milk, and Both", func
     }
 
     // 2. Insert customer with Cow milk only
-    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
-                  VALUES (1, 'Test Cow Only', '9999911111', 'Block A', 'Test Route', 'cow', 1.0, 60.0, 'active')");
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status) 
+                  VALUES (1, 'Test Cow Only', '9999911111', 'Block A', 'Test Route', 'cow', 'active')");
     $c1 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9999911111'");
     if (!$c1 || $c1['milk_types'] !== 'cow') {
         throw new \Exception("Expected milk_types 'cow', got: " . ($c1['milk_types'] ?? 'null'));
@@ -220,8 +220,8 @@ runTest("Customer Milk Type Multiselect: Cow Milk, Buffalo Milk, and Both", func
     }
 
     // 3. Insert customer with Buffalo milk only
-    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
-                  VALUES (1, 'Test Buffalo Only', '9999922222', 'Block B', 'Test Route', 'buffalo', 1.5, 75.0, 'active')");
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status) 
+                  VALUES (1, 'Test Buffalo Only', '9999922222', 'Block B', 'Test Route', 'buffalo', 'active')");
     $c2 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9999922222'");
     if (!$c2 || $c2['milk_types'] !== 'buffalo') {
         throw new \Exception("Expected milk_types 'buffalo', got: " . ($c2['milk_types'] ?? 'null'));
@@ -232,8 +232,8 @@ runTest("Customer Milk Type Multiselect: Cow Milk, Buffalo Milk, and Both", func
     }
 
     // 4. Insert customer with BOTH Cow and Buffalo (Multiselect)
-    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
-                  VALUES (1, 'Test Both Milks', '9999933333', 'Block C', 'Test Route', 'cow,buffalo', 2.0, 70.0, 'active')");
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status) 
+                  VALUES (1, 'Test Both Milks', '9999933333', 'Block C', 'Test Route', 'cow,buffalo', 'active')");
     $c3 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9999933333'");
     if (!$c3 || $c3['milk_types'] !== 'cow,buffalo') {
         throw new \Exception("Expected milk_types 'cow,buffalo', got: " . ($c3['milk_types'] ?? 'null'));
@@ -369,10 +369,18 @@ runTest("Customer CSV Import, Export, and Sample Template", function() use ($db)
         $status = $row[7];
 
         $db->execute(
-            "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status)
-             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [$name, $phone, $addr, $route, $milk, $qty, $rate, $status]
+            "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status)
+             VALUES (1, ?, ?, ?, ?, ?, ?)",
+            [$name, $phone, $addr, $route, $milk, $status]
         );
+        $newId = (int)$db->lastInsertId();
+        $prodSvc = new \App\Services\ProductService();
+        $prodSvc->syncSubscriptionsFromLegacyCustomer(1, [
+            'id' => $newId,
+            'milk_types' => $milk,
+            'default_quantity' => $qty,
+            'rate_per_unit' => $rate,
+        ]);
         $imported++;
     }
     fclose($handle);
@@ -384,17 +392,21 @@ runTest("Customer CSV Import, Export, and Sample Template", function() use ($db)
 
     // Verify imported data in DB
     $c1 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666611111'");
-    if (!$c1 || $c1['milk_types'] !== 'cow' || (float)$c1['default_quantity'] !== 1.5) {
+    $s1 = $db->fetchOne("SELECT default_quantity FROM customer_subscriptions WHERE customer_id = ?", [$c1['id']]);
+    if (!$c1 || $c1['milk_types'] !== 'cow' || (float)$s1['default_quantity'] !== 1.5) {
         throw new \Exception("Imported customer 1 mismatch");
     }
 
     $c2 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666622222'");
-    if (!$c2 || $c2['milk_types'] !== 'buffalo' || (float)$c2['default_quantity'] !== 2.0) {
+    $s2 = $db->fetchOne("SELECT default_quantity FROM customer_subscriptions WHERE customer_id = ?", [$c2['id']]);
+    if (!$c2 || $c2['milk_types'] !== 'buffalo' || (float)$s2['default_quantity'] !== 2.0) {
         throw new \Exception("Imported customer 2 mismatch");
     }
 
     $c3 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666633333'");
-    if (!$c3 || $c3['milk_types'] !== 'cow,buffalo' || (float)$c3['default_quantity'] !== 2.5) {
+    $s3 = $db->fetchAll("SELECT default_quantity FROM customer_subscriptions WHERE customer_id = ?", [$c3['id']]);
+    $sum3 = array_sum(array_column($s3, 'default_quantity'));
+    if (!$c3 || $c3['milk_types'] !== 'cow,buffalo' || (float)$sum3 !== 2.5) {
         throw new \Exception("Imported customer 3 mismatch");
     }
 
@@ -438,8 +450,8 @@ runTest("Customer Subscriptions: Independent Quantities & Rates for Both Milks",
     $tenantId = 1;
 
     // Create a customer
-    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
-                  VALUES (?, 'Dual Milk Test Cust', '9888800001', 'Flat 100', 'Test Route', 'cow,buffalo', 2.5, 60.0, 'active')",
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status) 
+                  VALUES (?, 'Dual Milk Test Cust', '9888800001', 'Flat 100', 'Test Route', 'cow,buffalo', 'active')",
                   [$tenantId]);
     $custId = (int)$db->lastInsertId();
 
@@ -473,10 +485,10 @@ runTest("Customer Subscriptions: Independent Quantities & Rates for Both Milks",
         throw new \Exception("Buffalo subscription mismatch");
     }
 
-    // Verify total default quantity in customer row updated to 2.5L
-    $cust = $db->fetchOne("SELECT default_quantity FROM customers WHERE id = ?", [$custId]);
-    if ((float)$cust['default_quantity'] !== 2.5) {
-        throw new \Exception("Customer default_quantity was not synced to sum (2.5)");
+    // Verify total default quantity across subscriptions is 2.5L
+    $totalSubQty = array_sum(array_column($stored, 'default_quantity'));
+    if ((float)$totalSubQty !== 2.5) {
+        throw new \Exception("Total subscription quantity mismatch (expected 2.5, got {$totalSubQty})");
     }
 
     // Clean up
@@ -489,8 +501,8 @@ runTest("Daily Delivery Run-Sheet: Itemized Product Tracking & Zero-Charge Rule"
     $productService = new \App\Services\ProductService();
 
     // Create a customer
-    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
-                  VALUES (?, 'RunSheet Item Test Cust', '9888800002', 'Flat 200', 'Test Route', 'cow,buffalo', 2.0, 60.0, 'active')",
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status) 
+                  VALUES (?, 'RunSheet Item Test Cust', '9888800002', 'Flat 200', 'Test Route', 'cow,buffalo', 'active')",
                   [$tenantId]);
     $custId = (int)$db->lastInsertId();
 
@@ -547,8 +559,8 @@ runTest("Multi-Product Invoicing: Itemized Product Subtotals", function() use ($
     $productService = new \App\Services\ProductService();
 
     // Create a customer
-    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
-                  VALUES (?, 'Billing Item Test Cust', '9888800003', 'Flat 300', 'Test Route', 'cow,buffalo', 2.0, 60.0, 'active')",
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status) 
+                  VALUES (?, 'Billing Item Test Cust', '9888800003', 'Flat 300', 'Test Route', 'cow,buffalo', 'active')",
                   [$tenantId]);
     $custId = (int)$db->lastInsertId();
 

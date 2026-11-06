@@ -5,8 +5,7 @@
 
 $status = $item['status'] ?? 'pending';
 $isOnLeave = !empty($item['is_on_leave']);
-$quantity = (float)($item['quantity'] ?? $item['default_quantity']);
-$defaultQty = (float)$item['default_quantity'];
+$quantity = (float)($item['quantity'] ?? 0.0);
 $customerId = (int)$item['customer_id'];
 ?>
 <div id="delivery-row-<?= $customerId ?>" class="p-4 bg-white hover:bg-slate-50 transition border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 <?= $isOnLeave ? 'bg-slate-50/80 opacity-90' : '' ?>">
@@ -64,9 +63,7 @@ $customerId = (int)$item['customer_id'];
                         <?php endforeach; ?>
                     </div>
                 <?php else: ?>
-                    <span>Default: <strong class="text-slate-800"><?= number_format($defaultQty, 1) ?> L</strong></span>
-                    <span>•</span>
-                    <span>Rate: <strong class="text-slate-800"><?= formatMoney($item['rate_per_unit']) ?>/L</strong></span>
+                    <span>Quantity: <strong class="text-slate-800"><?= number_format($quantity, 1) ?> Units</strong></span>
                 <?php endif; ?>
 
                 <?php if (!empty($item['notes'])): ?>

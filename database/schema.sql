@@ -116,8 +116,6 @@ CREATE TABLE customers (
     address TEXT,
     route_name VARCHAR(50) DEFAULT 'Main Route',
     milk_types VARCHAR(100) DEFAULT 'cow',
-    default_quantity DECIMAL(6, 2) NOT NULL DEFAULT 1.00,
-    rate_per_unit DECIMAL(10, 2) NOT NULL,
     status ENUM('active', 'inactive') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,

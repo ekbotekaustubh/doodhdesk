@@ -179,7 +179,7 @@ final class DeliveryService
                         'status' => 'pending',
                     ];
                 }
-                $quantity = $defaultSum > 0 ? $defaultSum : (float)$row['default_quantity'];
+                $quantity = $defaultSum;
             }
 
             // Stats
@@ -208,8 +208,6 @@ final class DeliveryService
                 'address' => (string)($row['address'] ?? ''),
                 'route_name' => (string)($row['route_name'] ?? 'Main Route'),
                 'milk_types' => (string)($row['milk_types'] ?? 'cow'),
-                'default_quantity' => (float)$row['default_quantity'],
-                'rate_per_unit' => (float)$row['rate_per_unit'],
                 'is_on_leave' => $isOnLeave,
                 'leave_reason' => $row['leave_reason'] ?? null,
                 'delivery_id' => $row['delivery_id'] ? (int)$row['delivery_id'] : null,
@@ -380,7 +378,7 @@ final class DeliveryService
 
         // Return updated row state
         $delivery = $this->db->fetchOne(
-            "SELECT dd.*, c.name AS customer_name, c.default_quantity, c.rate_per_unit, c.route_name, c.milk_types
+            "SELECT dd.*, c.name AS customer_name, c.route_name, c.milk_types
              FROM daily_deliveries dd
              JOIN customers c ON c.id = dd.customer_id
              WHERE dd.tenant_id = ? AND dd.customer_id = ? AND dd.delivery_date = ? AND dd.shift = ?",
@@ -393,7 +391,7 @@ final class DeliveryService
     public function markAllPendingAsDelivered(int $tenantId, string $date, string $shift): int
     {
         $pendingCustomers = $this->db->fetchAll(
-            "SELECT c.id, c.default_quantity 
+            "SELECT c.id 
              FROM customers c
              LEFT JOIN customer_leaves cl ON cl.customer_id = c.id 
                 AND cl.tenant_id = c.tenant_id 

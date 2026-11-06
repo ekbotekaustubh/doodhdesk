@@ -93,14 +93,14 @@ $prodStmt->execute([102, 2, 'Buffalo Milk', 'buffalo', 'L', 68.00, 1, 2]);
 
 // 5. Customers for Tenant 1
 $pdo->prepare("DELETE FROM customers WHERE tenant_id = 1")->execute();
-$custStmt = $pdo->prepare("INSERT INTO customers (id, tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$custStmt = $pdo->prepare("INSERT INTO customers (id, tenant_id, name, phone, address, route_name, milk_types, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 $customers = [
-    [1, 1, 'Aarav Sharma', '9822011111', 'Flat 101, Gokul Heights, Station Road', 'Green Valley Route', 'cow', 2.00, 65.00, 'active'],
-    [2, 1, 'Priya Verma', '9822022222', 'B-204, Sunrise Residency, Near Temple', 'Green Valley Route', 'buffalo', 1.50, 70.00, 'active'],
-    [3, 1, 'Rajesh Gupta', '9822033333', 'House #14, Civil Lines, Main Market', 'North City Route', 'cow,buffalo', 1.50, 60.00, 'active'],
-    [4, 1, 'Sneha Kulkarni', '9822044444', 'Flat 302, Palm Grove Society', 'Green Valley Route', 'cow', 2.50, 65.00, 'active'],
-    [5, 1, 'Vikram Singh', '9822055555', 'Villa 5, Lakeview Society, Ring Road', 'North City Route', 'buffalo', 3.00, 70.00, 'active'],
-    [6, 1, 'Ananya Deshmukh', '9822066666', 'Flat 405, Lotus Residency', 'North City Route', 'cow,buffalo', 2.00, 65.00, 'active'],
+    [1, 1, 'Aarav Sharma', '9822011111', 'Flat 101, Gokul Heights, Station Road', 'Green Valley Route', 'cow', 'active'],
+    [2, 1, 'Priya Verma', '9822022222', 'B-204, Sunrise Residency, Near Temple', 'Green Valley Route', 'buffalo', 'active'],
+    [3, 1, 'Rajesh Gupta', '9822033333', 'House #14, Civil Lines, Main Market', 'North City Route', 'cow,buffalo', 'active'],
+    [4, 1, 'Sneha Kulkarni', '9822044444', 'Flat 302, Palm Grove Society', 'Green Valley Route', 'cow', 'active'],
+    [5, 1, 'Vikram Singh', '9822055555', 'Villa 5, Lakeview Society, Ring Road', 'North City Route', 'buffalo', 'active'],
+    [6, 1, 'Ananya Deshmukh', '9822066666', 'Flat 405, Lotus Residency', 'North City Route', 'cow,buffalo', 'active'],
 ];
 foreach ($customers as $c) {
     $custStmt->execute($c);
@@ -126,10 +126,10 @@ $subStmt->execute([1, 6, 2, 1.00, 70.00, 'both', 1]);
 // 4 Customers for Tenant 2 (Free tier)
 $pdo->prepare("DELETE FROM customers WHERE tenant_id = 2")->execute();
 $tenant2Cust = [
-    [101, 2, 'Kavita Joshi', '9911011111', 'A-12 Shiv Krupa', 'Sector 1', 'cow', 1.00, 60.00, 'active'],
-    [102, 2, 'Manoj Patil', '9911022222', 'B-04 Golden Nest', 'Sector 1', 'cow,buffalo', 2.00, 62.00, 'active'],
-    [103, 2, 'Dinesh Rao', '9911033333', 'C-31 Shanti Niketan', 'Sector 2', 'buffalo', 1.50, 68.00, 'active'],
-    [104, 2, 'Neha Agarwal', '9911044444', 'D-15 Park View', 'Sector 2', 'cow', 1.00, 60.00, 'active'],
+    [101, 2, 'Kavita Joshi', '9911011111', 'A-12 Shiv Krupa', 'Sector 1', 'cow', 'active'],
+    [102, 2, 'Manoj Patil', '9911022222', 'B-04 Golden Nest', 'Sector 1', 'cow,buffalo', 'active'],
+    [103, 2, 'Dinesh Rao', '9911033333', 'C-31 Shanti Niketan', 'Sector 2', 'buffalo', 'active'],
+    [104, 2, 'Neha Agarwal', '9911044444', 'D-15 Park View', 'Sector 2', 'cow', 'active'],
 ];
 foreach ($tenant2Cust as $c) {
     $custStmt->execute($c);
@@ -200,7 +200,7 @@ for ($day = 1; $day <= $daysInPrevMonth; $day++) {
     $dStr = sprintf('%04d-%02d-%02d', $prevYear, $prevMonth, $day);
     foreach ($customers as $c) {
         $cId = $c[0];
-        $defaultQty = $c[7];
+        $defaultQty = array_sum(array_column($custSubsMap[$cId] ?? [], 'default_quantity'));
 
         // Shift 1: Morning
         // Let's create some missed days (e.g. day 7 and 21 for customer 1)
@@ -223,7 +223,7 @@ for ($day = 1; $day <= $currentDay; $day++) {
     $dStr = sprintf('%04d-%02d-%02d', $currentYear, $currentMonth, $day);
     foreach ($customers as $c) {
         $cId = $c[0];
-        $defaultQty = $c[7];
+        $defaultQty = array_sum(array_column($custSubsMap[$cId] ?? [], 'default_quantity'));
 
         // Check if on leave
         if ($cId === 2 && $dStr >= $leaveStart && $dStr <= $leaveEnd) {
@@ -256,7 +256,7 @@ $invStmt = $pdo->prepare("INSERT INTO invoices (tenant_id, customer_id, billing_
 // Calculate for each customer in prev month
 foreach ($customers as $c) {
     $cId = $c[0];
-    $cRate = (float)$c[8];
+    $cRate = (float)($custSubsMap[$cId][0]['custom_rate'] ?? $custSubsMap[$cId][0]['prod_rate'] ?? 60.0);
 
     // Deliveries summary for prev month
     $q = $pdo->prepare("SELECT 

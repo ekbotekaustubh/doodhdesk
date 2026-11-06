@@ -151,15 +151,13 @@ final class CustomerController
         $phone = trim((string)$request->post('phone', ''));
         $address = trim((string)$request->post('address', ''));
         $routeName = trim((string)$request->post('route_name', 'Main Route'));
-        $defaultQuantity = (float)$request->post('default_quantity', 1.0);
-        $ratePerUnit = (float)$request->post('rate_per_unit', 60.0);
         $status = (string)$request->post('status', 'active');
 
         // Extract and process product subscriptions (Approach A)
         $rawSubs = $request->post('subscriptions');
         $subsList = [];
         $totalSubQty = 0.0;
-        $primaryRate = $ratePerUnit;
+        $primaryRate = 60.0;
 
         if (is_array($rawSubs)) {
             foreach ($rawSubs as $pId => $subData) {
@@ -244,9 +242,9 @@ final class CustomerController
         }
 
         $this->db->execute(
-            "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [$tenantId, $name, $phone, $address, empty($routeName) ? 'Main Route' : $routeName, $milkTypes, $finalQty, $primaryRate, $status]
+            "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [$tenantId, $name, $phone, $address, empty($routeName) ? 'Main Route' : $routeName, $milkTypes, $status]
         );
 
         $customerId = (int)$this->db->lastInsertId();
@@ -303,15 +301,13 @@ final class CustomerController
         $phone = trim((string)$request->post('phone', ''));
         $address = trim((string)$request->post('address', ''));
         $routeName = trim((string)$request->post('route_name', 'Main Route'));
-        $defaultQuantity = (float)$request->post('default_quantity', 1.0);
-        $ratePerUnit = (float)$request->post('rate_per_unit', 60.0);
         $status = (string)$request->post('status', 'active');
 
         // Extract and process product subscriptions (Approach A)
         $rawSubs = $request->post('subscriptions');
         $subsList = [];
         $totalSubQty = 0.0;
-        $primaryRate = $ratePerUnit;
+        $primaryRate = 60.0;
 
         if (is_array($rawSubs)) {
             foreach ($rawSubs as $pId => $subData) {
@@ -401,9 +397,9 @@ final class CustomerController
 
         $this->db->execute(
             "UPDATE customers 
-             SET name = ?, phone = ?, address = ?, route_name = ?, milk_types = ?, default_quantity = ?, rate_per_unit = ?, status = ?
+             SET name = ?, phone = ?, address = ?, route_name = ?, milk_types = ?, status = ?
              WHERE id = ? AND tenant_id = ?",
-            [$name, $phone, $address, empty($routeName) ? 'Main Route' : $routeName, $milkTypes, $finalQty, $primaryRate, $status, $id, $tenantId]
+            [$name, $phone, $address, empty($routeName) ? 'Main Route' : $routeName, $milkTypes, $status, $id, $tenantId]
         );
 
         $this->productService->saveCustomerSubscriptions($tenantId, $id, $subsList);
@@ -596,7 +592,22 @@ final class CustomerController
             'Created Date'
         ], ',', '"', "\\");
 
+        $subsSummary = $this->db->fetchAll(
+            "SELECT cs.customer_id, 
+                    SUM(cs.default_quantity) as total_qty,
+                    COALESCE(cs.custom_rate, p.default_rate) as primary_rate
+             FROM customer_subscriptions cs
+             JOIN products p ON p.id = cs.product_id
+             WHERE cs.tenant_id = ? AND cs.is_active = 1
+             GROUP BY cs.customer_id",
+            [$tenantId]
+        );
+        $qtyMap = array_column($subsSummary, 'total_qty', 'customer_id');
+        $rateMap = array_column($subsSummary, 'primary_rate', 'customer_id');
+
         foreach ($customers as $c) {
+            $cQty = (float)($qtyMap[$c['id']] ?? 1.0);
+            $cRate = (float)($rateMap[$c['id']] ?? 60.0);
             fputcsv($out, [
                 $c['id'],
                 $c['name'],
@@ -604,8 +615,8 @@ final class CustomerController
                 $c['address'] ?? '',
                 $c['route_name'] ?? 'Main Route',
                 $c['milk_types'] ?? 'cow',
-                number_format((float)$c['default_quantity'], 2, '.', ''),
-                number_format((float)$c['rate_per_unit'], 2, '.', ''),
+                number_format($cQty, 2, '.', ''),
+                number_format($cRate, 2, '.', ''),
                 $c['status'],
                 substr((string)($c['created_at'] ?? ''), 0, 10)
             ], ',', '"', "\\");
@@ -777,9 +788,9 @@ final class CustomerController
 
                     $this->db->execute(
                         "UPDATE customers 
-                         SET name = ?, address = ?, route_name = ?, milk_types = ?, default_quantity = ?, rate_per_unit = ?, status = ?
+                         SET name = ?, address = ?, route_name = ?, milk_types = ?, status = ?
                          WHERE id = ? AND tenant_id = ?",
-                        [$name, $address, $routeName, $milkTypes, $defaultQty, $ratePerUnit, $status, (int)$existing['id'], $tenantId]
+                        [$name, $address, $routeName, $milkTypes, $status, (int)$existing['id'], $tenantId]
                     );
                     $this->productService->syncSubscriptionsFromLegacyCustomer($tenantId, [
                         'id' => (int)$existing['id'],
@@ -803,9 +814,9 @@ final class CustomerController
                 }
 
                 $this->db->execute(
-                    "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [$tenantId, $name, $phone, $address, $routeName, $milkTypes, $defaultQty, $ratePerUnit, $status]
+                    "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [$tenantId, $name, $phone, $address, $routeName, $milkTypes, $status]
                 );
                 $newCustId = (int)$this->db->lastInsertId();
                 $this->productService->syncSubscriptionsFromLegacyCustomer($tenantId, [

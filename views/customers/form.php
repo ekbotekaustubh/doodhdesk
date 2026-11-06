@@ -30,15 +30,6 @@ foreach ($products as $p) {
             $isActive = true;
             $qty = 1.0;
         }
-    } elseif ($isEdit) {
-        if (in_array($p['code'], $currentMilkTypes, true)) {
-            $isActive = true;
-            $qty = (float)($customer['default_quantity'] ?? 1.0);
-            if (count($currentMilkTypes) > 1) {
-                $qty = round($qty / count($currentMilkTypes), 2);
-            }
-            $rate = (float)($customer['rate_per_unit'] ?? $p['default_rate']);
-        }
     }
 
     $initialProducts[$pId] = [
@@ -249,10 +240,6 @@ foreach ($products as $p) {
                         <span>Estimated: <strong class="text-emerald-700 font-black">₹<span x-text="totalDailyAmount()"></span></strong>/day</span>
                     </div>
                 </div>
-
-                <!-- Hidden inputs for backward-compatible fallback -->
-                <input type="hidden" name="default_quantity" :value="totalQuantity()">
-                <input type="hidden" name="rate_per_unit" :value="Object.values(products).find(p => p.is_active) ? Object.values(products).find(p => p.is_active).custom_rate : 65.0">
             </div>
 
             <!-- Submit Button -->

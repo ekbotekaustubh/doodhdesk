@@ -143,6 +143,7 @@
                             </p>
                             <div class="text-xs text-slate-600 mt-1 flex items-center gap-2 flex-wrap">
                                 <?php if (!empty($c['subscriptions'])): ?>
+                                    <?php $custTotalQty = array_sum(array_column($c['subscriptions'], 'default_quantity')); ?>
                                     <div class="flex items-center gap-1.5 flex-wrap">
                                         <?php foreach ($c['subscriptions'] as $cs): ?>
                                             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 text-[11px] font-bold border border-slate-200">
@@ -154,11 +155,9 @@
                                         <?php endforeach; ?>
                                     </div>
                                     <span>•</span>
-                                    <span>Daily Total: <strong class="text-slate-900"><?= number_format((float)$c['default_quantity'], 1) ?> Units</strong></span>
+                                    <span>Daily Total: <strong class="text-slate-900"><?= number_format((float)$custTotalQty, 1) ?> Units</strong></span>
                                 <?php else: ?>
-                                    <span>Default: <strong class="text-slate-900"><?= number_format((float)$c['default_quantity'], 1) ?> L/day</strong></span>
-                                    <span>•</span>
-                                    <span>Rate: <strong class="text-slate-900"><?= formatMoney($c['rate_per_unit']) ?>/L</strong></span>
+                                    <span class="text-slate-400 italic text-xs">No active subscriptions</span>
                                 <?php endif; ?>
                             </div>
                         </div>

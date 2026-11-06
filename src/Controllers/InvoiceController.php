@@ -279,7 +279,7 @@ final class InvoiceController
 
         if (empty($breakdown['calendar_matrix'])) {
             if (empty($breakdown['itemized_deliveries'])) {
-                $customerRate = (float)($breakdown['customer_rate'] ?? $breakdown['rate_per_unit'] ?? 60.0);
+                $customerRate = (float)($breakdown['customer_rate'] ?? 60.0);
 
                 $deliveries = $this->db->fetchAll(
                     "SELECT delivery_date as date, shift, status, quantity, notes

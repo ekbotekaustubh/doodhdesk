@@ -26,7 +26,17 @@ final class BillingService
             throw new \InvalidArgumentException("Customer not found.");
         }
 
-        $customerRate = (float)$customer['rate_per_unit'];
+        $primarySub = $this->db->fetchOne(
+            "SELECT cs.custom_rate, p.default_rate 
+             FROM customer_subscriptions cs
+             JOIN products p ON p.id = cs.product_id
+             WHERE cs.tenant_id = ? AND cs.customer_id = ? AND cs.is_active = 1
+             ORDER BY p.sort_order ASC, cs.id ASC LIMIT 1",
+            [$tenantId, $customerId]
+        );
+        $customerRate = $primarySub 
+            ? (float)($primarySub['custom_rate'] ?? $primarySub['default_rate']) 
+            : 60.0;
 
         // Determine date range for billing month
         $daysInMonth = (int)cal_days_in_month(CAL_GREGORIAN, $month, $year);
