@@ -1,0 +1,3859 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "DoodhDesk REST API Specification",
+        "description": "Complete enterprise REST API for **DoodhDesk** — Modern Multi-Tenant Milk & Daily Essentials Delivery ERP.\n\n### Highlights:\n- **Dual Authentication**: Bearer Token via `Authorization: Bearer <token>` or Cookie-based Session auth.\n- **Multi-Tenancy**: Data isolation guaranteed across dairy tenants with strict tenant boundary enforcement.\n- **Quota Enforced**: Transparent SaaS capacity checks (Free 5 customers, elastic upgrades).\n- **Anti-Dispute Run-Sheets**: Real-time delivery tracking, vacation pause adjustments, and batch invoicing.\n- **Super Admin Governance**: Full platform metrics, tenant lifecycle, and quota overrides.\n\n### Base URLs:\n- Gateway: `http://localhost/doodhdesk/index.php/api`\n- Direct: `http://localhost/doodhdesk/api`",
+        "version": "1.0.0",
+        "contact": {
+            "name": "DoodhDesk API Support",
+            "email": "support@doodhdesk.local"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://localhost/doodhdesk/index.php",
+            "description": "Local Development Server (via index.php)"
+        },
+        {
+            "url": "http://localhost/doodhdesk/api",
+            "description": "Local API Gateway (via /api)"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Authentication",
+            "description": "Tenant user authentication, registration, session context, and logout."
+        },
+        {
+            "name": "Dashboard",
+            "description": "Real-time operational KPIs, daily delivery metrics, and monthly financial summaries."
+        },
+        {
+            "name": "Products",
+            "description": "Catalog of milk and grocery products, pricing, and active status."
+        },
+        {
+            "name": "Customers",
+            "description": "Customer subscriber management, delivery routes, and product subscriptions."
+        },
+        {
+            "name": "Customer Leaves",
+            "description": "Vacation pause scheduling to prevent disputed deliveries."
+        },
+        {
+            "name": "Deliveries",
+            "description": "Daily delivery run-sheets, proof-of-delivery toggles, and quantity adjustments."
+        },
+        {
+            "name": "Invoices",
+            "description": "Monthly billing cycle calculation, batch generation, and WhatsApp sharing."
+        },
+        {
+            "name": "Payments & Ledger",
+            "description": "Payment collection, invoice reconciliations, and customer ledger statements."
+        },
+        {
+            "name": "Settings & Charges",
+            "description": "Dairy branding profile, GST rates, UPI payment configurations, and recurring charges."
+        },
+        {
+            "name": "Subscription & Quota",
+            "description": "Tenant subscription plan status and elastic customer capacity upgrades."
+        },
+        {
+            "name": "Admin Platform",
+            "description": "Super Admin platform oversight, global settings, and tenant quota controls."
+        }
+    ],
+    "paths": {
+        "/api/auth/login": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Tenant User Login",
+                "description": "Authenticates tenant user with email and password, returning an API Bearer token valid for 30 days.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "admin@krushnadairy.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "password123"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Login successful"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "token": {
+                                                    "type": "string",
+                                                    "example": "9f8b4c2a1e7d8a6b5c3e4f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2"
+                                                },
+                                                "user": {
+                                                    "$ref": "#/components/schemas/User"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid email or password / Account suspended",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/register": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Register New Dairy Tenant",
+                "description": "Creates a new tenant business and primary admin user with default 5-customer Free subscription tier and seed products.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name",
+                                    "email",
+                                    "password",
+                                    "dairy_name",
+                                    "phone"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Vinayak Shinde"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "example": "vinayak@maharashtradairy.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "SecretPass@2026"
+                                    },
+                                    "dairy_name": {
+                                        "type": "string",
+                                        "example": "Maharashtra Fresh Dairy"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "9822001122"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Registration successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Registration successful"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "token": {
+                                                    "type": "string",
+                                                    "example": "7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8"
+                                                },
+                                                "user": {
+                                                    "$ref": "#/components/schemas/User"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error / Email or Phone already registered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/me": {
+            "get": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Get Authenticated User Profile & Context",
+                "description": "Returns current user identity, tenant profile, and active quota constraints.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Authenticated user profile",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "$ref": "#/components/schemas/User"
+                                                },
+                                                "tenant": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "integer",
+                                                            "example": 1
+                                                        },
+                                                        "name": {
+                                                            "type": "string",
+                                                            "example": "Krushna Dairy Farm"
+                                                        },
+                                                        "phone": {
+                                                            "type": "string",
+                                                            "example": "9876543210"
+                                                        },
+                                                        "address": {
+                                                            "type": "string",
+                                                            "example": "Pune, Maharashtra"
+                                                        },
+                                                        "is_active": {
+                                                            "type": "integer",
+                                                            "example": 1
+                                                        }
+                                                    }
+                                                },
+                                                "subscription": {
+                                                    "$ref": "#/components/schemas/Quota"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/logout": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Logout & Revoke Token",
+                "description": "Revokes the Bearer token and destroys PHP session.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Logged out successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/auth/login": {
+            "post": {
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Super Admin Login",
+                "description": "Authenticates Super Admin platform operator for governance and multi-tenant management.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "email",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "example": "admin@dairyflow.com"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "password",
+                                        "example": "admin123"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Super Admin login successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Super Admin login successful"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "token": {
+                                                    "type": "string",
+                                                    "example": "admin_tok_84729384729384723948729384723948"
+                                                },
+                                                "user": {
+                                                    "$ref": "#/components/schemas/User"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials or not authorized as Super Admin",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/dashboard/stats": {
+            "get": {
+                "tags": [
+                    "Dashboard"
+                ],
+                "summary": "Get Operational Dashboard KPIs",
+                "description": "Retrieves real-time daily shift distribution stats, quota utilization, month-to-date billed amount, and payment collections.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dashboard operational metrics",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "date": {
+                                                    "type": "string",
+                                                    "example": "2026-11-06"
+                                                },
+                                                "morning_shift": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "total_deliveries": {
+                                                            "type": "integer",
+                                                            "example": 5
+                                                        },
+                                                        "delivered_count": {
+                                                            "type": "integer",
+                                                            "example": 4
+                                                        },
+                                                        "total_liters": {
+                                                            "type": "number",
+                                                            "example": 6.5
+                                                        }
+                                                    }
+                                                },
+                                                "evening_shift": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "total_deliveries": {
+                                                            "type": "integer",
+                                                            "example": 5
+                                                        },
+                                                        "delivered_count": {
+                                                            "type": "integer",
+                                                            "example": 0
+                                                        },
+                                                        "total_liters": {
+                                                            "type": "number",
+                                                            "example": 5
+                                                        }
+                                                    }
+                                                },
+                                                "quota": {
+                                                    "$ref": "#/components/schemas/Quota"
+                                                },
+                                                "month_to_date": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "month": {
+                                                            "type": "integer",
+                                                            "example": 11
+                                                        },
+                                                        "year": {
+                                                            "type": "integer",
+                                                            "example": 2026
+                                                        },
+                                                        "total_invoices": {
+                                                            "type": "integer",
+                                                            "example": 5
+                                                        },
+                                                        "total_billed": {
+                                                            "type": "number",
+                                                            "example": 12500
+                                                        },
+                                                        "total_paid": {
+                                                            "type": "number",
+                                                            "example": 8400
+                                                        },
+                                                        "payments_collected": {
+                                                            "type": "number",
+                                                            "example": 8400
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/products": {
+            "get": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "List Products",
+                "description": "Returns list of milk and catalog products configured for the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "active_only",
+                        "in": "query",
+                        "description": "Filter only active products (1 or true)",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of tenant products",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Product"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Create a New Product",
+                "description": "Creates a new milk or item entry in tenant product catalog.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name",
+                                    "default_rate"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "A2 Gir Cow Milk"
+                                    },
+                                    "code": {
+                                        "type": "string",
+                                        "example": "a2_cow"
+                                    },
+                                    "unit": {
+                                        "type": "string",
+                                        "example": "L",
+                                        "default": "L"
+                                    },
+                                    "default_rate": {
+                                        "type": "number",
+                                        "example": 75
+                                    },
+                                    "sort_order": {
+                                        "type": "integer",
+                                        "example": 3
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Product created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Product created successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Product"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error / Code already exists",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/products/{id}": {
+            "get": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Get Product Details",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Product found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Product"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Product not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Update Product",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Fresh Cow Milk (Updated)"
+                                    },
+                                    "code": {
+                                        "type": "string",
+                                        "example": "cow"
+                                    },
+                                    "unit": {
+                                        "type": "string",
+                                        "example": "L"
+                                    },
+                                    "default_rate": {
+                                        "type": "number",
+                                        "example": 56
+                                    },
+                                    "sort_order": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "is_active": {
+                                        "type": "integer",
+                                        "example": 1
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Product updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Delete / Deactivate Product",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Product removed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/products/{id}/toggle": {
+            "post": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Toggle Product Active / Inactive Status",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status toggled successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/customers": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "List Customers with Subscription Breakdown",
+                "description": "Lists dairy customers with search filters, route grouping, assigned milk subscriptions, and current quota telemetry.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "description": "Search by name, phone, or address",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "route",
+                        "in": "query",
+                        "description": "Filter by route name",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter by status (active/inactive)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "active",
+                                "inactive"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "milk_type",
+                        "in": "query",
+                        "description": "Filter by milk type (cow/buffalo/both)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "cow",
+                                "buffalo",
+                                "both"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Customer directory retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Customer"
+                                            }
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_count": {
+                                                    "type": "integer",
+                                                    "example": 5
+                                                },
+                                                "quota": {
+                                                    "$ref": "#/components/schemas/Quota"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Create Customer with Subscriptions",
+                "description": "Enrolls a new customer with their daily product quantity and custom rates. Protected by SaaS Quota Guard.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name",
+                                    "phone"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Sachin Tendulkar"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "9820011223"
+                                    },
+                                    "address": {
+                                        "type": "string",
+                                        "example": "Bandra West, Mumbai"
+                                    },
+                                    "route_name": {
+                                        "type": "string",
+                                        "example": "West Route",
+                                        "default": "Main Route"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "active",
+                                            "inactive"
+                                        ],
+                                        "default": "active"
+                                    },
+                                    "subscriptions": {
+                                        "type": "array",
+                                        "description": "List of subscribed products with default quantities and custom rates",
+                                        "items": {
+                                            "type": "object",
+                                            "required": [
+                                                "product_id",
+                                                "quantity"
+                                            ],
+                                            "properties": {
+                                                "product_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "quantity": {
+                                                    "type": "number",
+                                                    "example": 2
+                                                },
+                                                "custom_rate": {
+                                                    "type": "number",
+                                                    "nullable": true,
+                                                    "example": 55
+                                                },
+                                                "shift": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "morning",
+                                                        "evening",
+                                                        "both"
+                                                    ],
+                                                    "default": "both"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Customer registered successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Customer created successfully"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Customer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "QUOTA_EXCEEDED: Customer limit reached for current plan",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/customers/routes": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "List Delivery Routes",
+                "description": "Returns list of all distinct delivery route names configured across customers.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of route names",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            },
+                                            "example": [
+                                                "Main Route",
+                                                "North Route",
+                                                "Society Line 1"
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/customers/{id}": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Get Customer Details, Leaves & Recent Invoices",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Customer details retrieved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Customer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Customer not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Update Customer Profile & Subscriptions",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Ramesh Patil"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "9876543210"
+                                    },
+                                    "address": {
+                                        "type": "string",
+                                        "example": "Flat 202, Gokul Apts"
+                                    },
+                                    "route_name": {
+                                        "type": "string",
+                                        "example": "Main Route"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "active",
+                                            "inactive"
+                                        ]
+                                    },
+                                    "subscriptions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "product_id": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "quantity": {
+                                                    "type": "number",
+                                                    "example": 1.5
+                                                },
+                                                "custom_rate": {
+                                                    "type": "number",
+                                                    "nullable": true,
+                                                    "example": 54
+                                                },
+                                                "shift": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "morning",
+                                                        "evening",
+                                                        "both"
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Customer updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/customers/{id}/status": {
+            "post": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Toggle Customer Status (Active / Inactive)",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "active",
+                                            "inactive"
+                                        ],
+                                        "example": "inactive"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Customer status updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/customers/{id}/leaves": {
+            "get": {
+                "tags": [
+                    "Customer Leaves"
+                ],
+                "summary": "List Vacation Pauses for Customer",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Customer leave periods",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CustomerLeave"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Customer Leaves"
+                ],
+                "summary": "Schedule Delivery Pause (Leave)",
+                "description": "Pauses delivery generation for date range, preventing dispute over unconsumed milk.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "start_date",
+                                    "end_date"
+                                ],
+                                "properties": {
+                                    "start_date": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "example": "2026-11-10"
+                                    },
+                                    "end_date": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "example": "2026-11-15"
+                                    },
+                                    "reason": {
+                                        "type": "string",
+                                        "example": "Vacation in Goa"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Leave scheduled successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error / End date before start date",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/customers/{id}/leaves/{leave_id}": {
+            "delete": {
+                "tags": [
+                    "Customer Leaves"
+                ],
+                "summary": "Cancel / Delete Vacation Pause",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    },
+                    {
+                        "name": "leave_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Leave cancelled successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/deliveries": {
+            "get": {
+                "tags": [
+                    "Deliveries"
+                ],
+                "summary": "Get Daily Delivery Run-Sheet",
+                "description": "Returns daily delivery run-sheet for drivers or dispatchers, automatically adjusted for vacation pauses.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "date",
+                        "in": "query",
+                        "description": "Delivery date (YYYY-MM-DD), defaults to today",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "shift",
+                        "in": "query",
+                        "description": "Shift (morning, evening, both)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "morning",
+                                "evening",
+                                "both"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "route",
+                        "in": "query",
+                        "description": "Filter by route name",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter by status (pending, delivered, undelivered)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "pending",
+                                "delivered",
+                                "undelivered"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Daily run-sheet items",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Delivery"
+                                            }
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "date": {
+                                                    "type": "string",
+                                                    "example": "2026-11-06"
+                                                },
+                                                "shift": {
+                                                    "type": "string",
+                                                    "example": "morning"
+                                                },
+                                                "total_liters": {
+                                                    "type": "number",
+                                                    "example": 12.5
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/deliveries/toggle": {
+            "post": {
+                "tags": [
+                    "Deliveries"
+                ],
+                "summary": "Toggle Delivery Status (Delivered <-> Pending)",
+                "description": "Proof-of-delivery trigger for delivery boys on mobile devices.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "integer",
+                                        "example": 101,
+                                        "description": "Existing delivery ID, or specify customer_id, product_id, date, shift"
+                                    },
+                                    "customer_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "product_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "delivery_date": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "example": "2026-11-06"
+                                    },
+                                    "shift": {
+                                        "type": "string",
+                                        "enum": [
+                                            "morning",
+                                            "evening"
+                                        ],
+                                        "example": "morning"
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "delivered",
+                                            "pending",
+                                            "undelivered"
+                                        ],
+                                        "example": "delivered"
+                                    },
+                                    "quantity": {
+                                        "type": "number",
+                                        "example": 1.5
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Delivery status updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/deliveries/edit-quantity": {
+            "post": {
+                "tags": [
+                    "Deliveries"
+                ],
+                "summary": "Adjust Quantity for Today or Specific Date",
+                "description": "Allows delivery partner or customer to record ad-hoc extra milk or partial quantity for a shift.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "quantity"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "integer",
+                                        "example": 101
+                                    },
+                                    "quantity": {
+                                        "type": "number",
+                                        "example": 2.5
+                                    },
+                                    "customer_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "product_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "delivery_date": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "example": "2026-11-06"
+                                    },
+                                    "shift": {
+                                        "type": "string",
+                                        "enum": [
+                                            "morning",
+                                            "evening"
+                                        ],
+                                        "example": "morning"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Quantity updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/deliveries/bulk-deliver": {
+            "post": {
+                "tags": [
+                    "Deliveries"
+                ],
+                "summary": "Bulk Deliver Shift Deliveries",
+                "description": "Marks all pending deliveries for a specific date, shift, and route as delivered with 1 click.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "date": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "example": "2026-11-06"
+                                    },
+                                    "shift": {
+                                        "type": "string",
+                                        "enum": [
+                                            "morning",
+                                            "evening"
+                                        ],
+                                        "example": "morning"
+                                    },
+                                    "route_name": {
+                                        "type": "string",
+                                        "example": "Main Route"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Bulk delivery complete",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Bulk delivery completed. 5 deliveries updated."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "updated_count": {
+                                                    "type": "integer",
+                                                    "example": 5
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/deliveries/summary": {
+            "get": {
+                "tags": [
+                    "Deliveries"
+                ],
+                "summary": "Delivery Shift Summary Metrics",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "date",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "example": "2026-11-06"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Shift summaries",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/invoices": {
+            "get": {
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "List Invoices",
+                "description": "Lists monthly bills with status filters (paid, unpaid, partial) and month/year queries.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "month",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 12
+                        },
+                        "example": 10
+                    },
+                    {
+                        "name": "year",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 2026
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "paid",
+                                "unpaid",
+                                "partial"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "customer_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of invoices",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Invoice"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/invoices/{id}": {
+            "get": {
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Get Invoice Details & Line Items",
+                "description": "Detailed view of customer tax invoice, including daily delivery line items, tax breakdown, extra charges, and payment balance.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 13
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Invoice details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Invoice"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Invoice not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/invoices/generate-batch": {
+            "post": {
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Batch Generate Invoices for Month",
+                "description": "Calculates and compiles monthly milk delivery ledger and generates bills for all customers in one go.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "month",
+                                    "year"
+                                ],
+                                "properties": {
+                                    "month": {
+                                        "type": "integer",
+                                        "example": 10
+                                    },
+                                    "year": {
+                                        "type": "integer",
+                                        "example": 2026
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Batch invoice generation report",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Batch invoice generation completed"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "month": {
+                                                    "type": "integer",
+                                                    "example": 10
+                                                },
+                                                "year": {
+                                                    "type": "integer",
+                                                    "example": 2026
+                                                },
+                                                "generated_count": {
+                                                    "type": "integer",
+                                                    "example": 5
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/invoices/generate-single": {
+            "post": {
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Generate or Recalculate Invoice for a Customer",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "customer_id",
+                                    "month",
+                                    "year"
+                                ],
+                                "properties": {
+                                    "customer_id": {
+                                        "type": "integer",
+                                        "example": 1
+                                    },
+                                    "month": {
+                                        "type": "integer",
+                                        "example": 10
+                                    },
+                                    "year": {
+                                        "type": "integer",
+                                        "example": 2026
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Single invoice generated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/Invoice"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/invoices/{id}/share": {
+            "get": {
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Generate WhatsApp Share & SMS Link",
+                "description": "Generates formatted WhatsApp message with direct public bill link and UPI payment link for instant sharing.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 13
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "WhatsApp and SMS share links",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "invoice_id": {
+                                                    "type": "integer",
+                                                    "example": 13
+                                                },
+                                                "customer_phone": {
+                                                    "type": "string",
+                                                    "example": "9876543210"
+                                                },
+                                                "whatsapp_url": {
+                                                    "type": "string",
+                                                    "example": "https://api.whatsapp.com/send?phone=919876543210&text=..."
+                                                },
+                                                "share_message": {
+                                                    "type": "string",
+                                                    "example": "Dear Ramesh Patil, your milk bill for Oct 2026 is Rs. 2,525.00..."
+                                                },
+                                                "public_view_url": {
+                                                    "type": "string",
+                                                    "example": "http://localhost/doodhdesk/index.php/invoices/13/a4"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/invoices/{id}/payments": {
+            "get": {
+                "tags": [
+                    "Payments & Ledger"
+                ],
+                "summary": "List Payment Transactions for Invoice",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 13
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Payments list",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Payment"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/payments": {
+            "post": {
+                "tags": [
+                    "Payments & Ledger"
+                ],
+                "summary": "Record a Payment Against an Invoice",
+                "description": "Records customer cash or UPI collection, automatically recalculating balance and marking invoice partial or paid.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "invoice_id",
+                                    "amount"
+                                ],
+                                "properties": {
+                                    "invoice_id": {
+                                        "type": "integer",
+                                        "example": 13
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "example": 2525
+                                    },
+                                    "payment_mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "cash",
+                                            "upi",
+                                            "bank_transfer",
+                                            "cheque"
+                                        ],
+                                        "default": "cash"
+                                    },
+                                    "reference_number": {
+                                        "type": "string",
+                                        "example": "UPI/2026/83948293"
+                                    },
+                                    "notes": {
+                                        "type": "string",
+                                        "example": "Received via PhonePe"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Payment recorded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Payment of 2525.00 recorded successfully"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "payment": {
+                                                    "$ref": "#/components/schemas/Payment"
+                                                },
+                                                "invoice": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "integer",
+                                                            "example": 13
+                                                        },
+                                                        "final_amount": {
+                                                            "type": "number",
+                                                            "example": 2525
+                                                        },
+                                                        "paid_amount": {
+                                                            "type": "number",
+                                                            "example": 2525
+                                                        },
+                                                        "balance_due": {
+                                                            "type": "number",
+                                                            "example": 0
+                                                        },
+                                                        "payment_status": {
+                                                            "type": "string",
+                                                            "example": "paid"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error / Invoice already fully paid",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/customers/{id}/ledger": {
+            "get": {
+                "tags": [
+                    "Payments & Ledger"
+                ],
+                "summary": "Get Customer Financial Statement & Ledger",
+                "description": "Returns complete chronological debit (invoices) and credit (payments) transaction history and outstanding balance.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Customer account ledger",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "customer": {
+                                                    "$ref": "#/components/schemas/Customer"
+                                                },
+                                                "total_billed": {
+                                                    "type": "number",
+                                                    "example": 12500
+                                                },
+                                                "total_paid": {
+                                                    "type": "number",
+                                                    "example": 10000
+                                                },
+                                                "outstanding_balance": {
+                                                    "type": "number",
+                                                    "example": 2500
+                                                },
+                                                "invoices": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Invoice"
+                                                    }
+                                                },
+                                                "payments": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Payment"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings": {
+            "get": {
+                "tags": [
+                    "Settings & Charges"
+                ],
+                "summary": "Get Tenant Profile, Taxes, UPI & Extra Charges",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tenant settings bundle",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "profile": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "dairy_name": {
+                                                            "type": "string",
+                                                            "example": "Krushna Dairy Farm"
+                                                        },
+                                                        "phone": {
+                                                            "type": "string",
+                                                            "example": "9876543210"
+                                                        },
+                                                        "address": {
+                                                            "type": "string",
+                                                            "example": "Pune, MH"
+                                                        },
+                                                        "tagline": {
+                                                            "type": "string",
+                                                            "example": "Pure & Fresh Milk Delivered Daily"
+                                                        }
+                                                    }
+                                                },
+                                                "taxes": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "tax_enabled": {
+                                                            "type": "boolean",
+                                                            "example": false
+                                                        },
+                                                        "tax_name": {
+                                                            "type": "string",
+                                                            "example": "GST"
+                                                        },
+                                                        "tax_rate_percent": {
+                                                            "type": "number",
+                                                            "example": 5
+                                                        },
+                                                        "gst_number": {
+                                                            "type": "string",
+                                                            "example": "27AAAAA0000A1Z5"
+                                                        }
+                                                    }
+                                                },
+                                                "upi": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "upi_id": {
+                                                            "type": "string",
+                                                            "example": "krushnadairy@oksbi"
+                                                        },
+                                                        "upi_payee_name": {
+                                                            "type": "string",
+                                                            "example": "Krushna Dairy Farm"
+                                                        }
+                                                    }
+                                                },
+                                                "charges": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/profile": {
+            "put": {
+                "tags": [
+                    "Settings & Charges"
+                ],
+                "summary": "Update Dairy Profile Details",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "dairy_name": {
+                                        "type": "string",
+                                        "example": "Krushna Dairy Farm"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "9876543210"
+                                    },
+                                    "address": {
+                                        "type": "string",
+                                        "example": "Pune, Maharashtra"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "example": "contact@krushnadairy.com"
+                                    },
+                                    "tagline": {
+                                        "type": "string",
+                                        "example": "Pure & Natural Milk"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Profile updated successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/taxes": {
+            "put": {
+                "tags": [
+                    "Settings & Charges"
+                ],
+                "summary": "Configure GST / Tax Settings",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "tax_enabled": {
+                                        "type": "boolean",
+                                        "example": true
+                                    },
+                                    "tax_name": {
+                                        "type": "string",
+                                        "example": "GST"
+                                    },
+                                    "tax_rate_percent": {
+                                        "type": "number",
+                                        "example": 5
+                                    },
+                                    "gst_number": {
+                                        "type": "string",
+                                        "example": "27ABCDE1234F1Z5"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tax configuration saved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/upi": {
+            "put": {
+                "tags": [
+                    "Settings & Charges"
+                ],
+                "summary": "Configure UPI Payment Receiver Details",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "upi_id"
+                                ],
+                                "properties": {
+                                    "upi_id": {
+                                        "type": "string",
+                                        "example": "dairyowner@oksbi"
+                                    },
+                                    "upi_payee_name": {
+                                        "type": "string",
+                                        "example": "Krushna Dairy Farm"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "UPI settings saved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/charges": {
+            "get": {
+                "tags": [
+                    "Settings & Charges"
+                ],
+                "summary": "List Extra / Recurring Charges",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of charges",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Settings & Charges"
+                ],
+                "summary": "Add Extra Charge Definition",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name",
+                                    "amount"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Monthly Delivery Charge"
+                                    },
+                                    "charge_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "fixed_monthly",
+                                            "percentage",
+                                            "per_delivery"
+                                        ],
+                                        "default": "fixed_monthly"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "example": 50
+                                    },
+                                    "is_active": {
+                                        "type": "boolean",
+                                        "default": true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Charge added successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/charges/{id}/toggle": {
+            "post": {
+                "tags": [
+                    "Settings & Charges"
+                ],
+                "summary": "Toggle Active Status for Extra Charge",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Charge status toggled",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/charges/{id}": {
+            "delete": {
+                "tags": [
+                    "Settings & Charges"
+                ],
+                "summary": "Delete Extra Charge",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 1
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Charge removed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subscription": {
+            "get": {
+                "tags": [
+                    "Subscription & Quota"
+                ],
+                "summary": "Get Current Subscription Plan & Quota Usage",
+                "description": "Displays maximum customer capacity, currently active customers, pricing per additional customer, and upgrade pricing preview.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Subscription details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "quota": {
+                                                    "$ref": "#/components/schemas/Quota"
+                                                },
+                                                "subscription": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "plan_name": {
+                                                            "type": "string",
+                                                            "example": "Free (5 Customers)"
+                                                        },
+                                                        "max_customers": {
+                                                            "type": "integer",
+                                                            "example": 5
+                                                        },
+                                                        "current_active_customers": {
+                                                            "type": "integer",
+                                                            "example": 3
+                                                        },
+                                                        "price_per_customer": {
+                                                            "type": "number",
+                                                            "example": 10
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "example": "active"
+                                                        }
+                                                    }
+                                                },
+                                                "platform_pricing": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "free_customer_limit": {
+                                                            "type": "integer",
+                                                            "example": 5
+                                                        },
+                                                        "price_per_customer": {
+                                                            "type": "number",
+                                                            "example": 10
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subscription/upgrade": {
+            "post": {
+                "tags": [
+                    "Subscription & Quota"
+                ],
+                "summary": "Upgrade Customer Capacity Quota",
+                "description": "Elastic self-serve upgrade allowing tenant to increase customer capacity limit (e.g. from 5 to 50 customers).",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "requested_capacity"
+                                ],
+                                "properties": {
+                                    "requested_capacity": {
+                                        "type": "integer",
+                                        "example": 25,
+                                        "description": "New target maximum customer capacity"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Quota upgraded successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Quota upgraded successfully to 25 customers."
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "old_capacity": {
+                                                    "type": "integer",
+                                                    "example": 5
+                                                },
+                                                "new_capacity": {
+                                                    "type": "integer",
+                                                    "example": 25
+                                                },
+                                                "active_customers": {
+                                                    "type": "integer",
+                                                    "example": 3
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Requested capacity cannot be lower than existing capacity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/stats": {
+            "get": {
+                "tags": [
+                    "Admin Platform"
+                ],
+                "summary": "Super Admin Platform KPIs",
+                "description": "Platform-wide aggregated metrics across all dairy businesses.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Platform operational statistics",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total_tenants": {
+                                                    "type": "integer",
+                                                    "example": 12
+                                                },
+                                                "active_tenants": {
+                                                    "type": "integer",
+                                                    "example": 11
+                                                },
+                                                "suspended_tenants": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "total_customers": {
+                                                    "type": "integer",
+                                                    "example": 450
+                                                },
+                                                "total_invoices_billed": {
+                                                    "type": "integer",
+                                                    "example": 1200
+                                                },
+                                                "total_revenue_billed": {
+                                                    "type": "number",
+                                                    "example": 950000
+                                                },
+                                                "total_payments_collected": {
+                                                    "type": "number",
+                                                    "example": 890000
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden: Super Admin privilege required",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/settings": {
+            "get": {
+                "tags": [
+                    "Admin Platform"
+                ],
+                "summary": "Get Global SaaS Platform Settings",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Global SaaS settings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Admin Platform"
+                ],
+                "summary": "Update Global SaaS Platform Settings",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "free_customer_limit": {
+                                        "type": "integer",
+                                        "example": 5
+                                    },
+                                    "price_per_customer": {
+                                        "type": "number",
+                                        "example": 10
+                                    },
+                                    "currency_symbol": {
+                                        "type": "string",
+                                        "example": "₹"
+                                    },
+                                    "platform_name": {
+                                        "type": "string",
+                                        "example": "DoodhDesk"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Platform settings updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/tenants": {
+            "get": {
+                "tags": [
+                    "Admin Platform"
+                ],
+                "summary": "List All Tenant Dairies with Capacity Stats",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "active",
+                                "suspended"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tenant roster",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/tenants/{id}/toggle-status": {
+            "post": {
+                "tags": [
+                    "Admin Platform"
+                ],
+                "summary": "Suspend or Activate a Dairy Tenant",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 2
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "active",
+                                            "suspended"
+                                        ],
+                                        "example": "suspended"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Tenant status changed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/tenants/{id}/quota": {
+            "post": {
+                "tags": [
+                    "Admin Platform"
+                ],
+                "summary": "Override Tenant Customer Quota Limit",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "example": 2
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "max_customers"
+                                ],
+                                "properties": {
+                                    "max_customers": {
+                                        "type": "integer",
+                                        "example": 100
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Quota override applied successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseSuccess"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "Token",
+                "description": "API Token obtained from `/api/auth/login` or `/api/admin/auth/login`. Header: `Authorization: Bearer <token>`"
+            }
+        },
+        "schemas": {
+            "ApiResponseSuccess": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Operation successful"
+                    },
+                    "data": {
+                        "type": "object"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "example": "2026-11-06T12:41:12+00:00"
+                    }
+                }
+            },
+            "ApiResponseError": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Error description"
+                    },
+                    "code": {
+                        "type": "string",
+                        "example": "VALIDATION_ERROR"
+                    },
+                    "errors": {
+                        "type": "object",
+                        "nullable": true
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "example": "2026-11-06T12:41:12+00:00"
+                    }
+                }
+            },
+            "User": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "John Doe"
+                    },
+                    "email": {
+                        "type": "string",
+                        "example": "john@example.com"
+                    },
+                    "role": {
+                        "type": "string",
+                        "example": "tenant_admin"
+                    },
+                    "tenant_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "example": 1
+                    },
+                    "tenant_name": {
+                        "type": "string",
+                        "nullable": true,
+                        "example": "Krushna Dairy Farm"
+                    },
+                    "status": {
+                        "type": "string",
+                        "example": "active"
+                    }
+                }
+            },
+            "Product": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "tenant_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Fresh Cow Milk"
+                    },
+                    "code": {
+                        "type": "string",
+                        "example": "cow"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "example": "L"
+                    },
+                    "default_rate": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 55
+                    },
+                    "is_active": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "sort_order": {
+                        "type": "integer",
+                        "example": 0
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "example": "2026-11-01 10:00:00"
+                    }
+                }
+            },
+            "CustomerSubscription": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "product_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "product_name": {
+                        "type": "string",
+                        "example": "Fresh Cow Milk"
+                    },
+                    "product_code": {
+                        "type": "string",
+                        "example": "cow"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "example": "L"
+                    },
+                    "default_quantity": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 1.5
+                    },
+                    "custom_rate": {
+                        "type": "number",
+                        "format": "float",
+                        "nullable": true,
+                        "example": 54
+                    },
+                    "effective_rate": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 54
+                    },
+                    "shift": {
+                        "type": "string",
+                        "enum": [
+                            "morning",
+                            "evening",
+                            "both"
+                        ],
+                        "example": "both"
+                    }
+                }
+            },
+            "Customer": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "tenant_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "example": "Ramesh Patil"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "example": "9876543210"
+                    },
+                    "address": {
+                        "type": "string",
+                        "example": "Plot 42, Shivajinagar"
+                    },
+                    "route_name": {
+                        "type": "string",
+                        "example": "North Route"
+                    },
+                    "milk_types": {
+                        "type": "string",
+                        "example": "cow,buffalo"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "inactive"
+                        ],
+                        "example": "active"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "example": "2026-11-01 08:30:00"
+                    },
+                    "subscriptions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CustomerSubscription"
+                        }
+                    },
+                    "total_daily_quantity": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 2.5
+                    }
+                }
+            },
+            "CustomerLeave": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "tenant_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "customer_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "format": "date",
+                        "example": "2026-11-10"
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "format": "date",
+                        "example": "2026-11-15"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "example": "Going out of town for Diwali"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "example": "2026-11-05 14:00:00"
+                    }
+                }
+            },
+            "Delivery": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 101
+                    },
+                    "customer_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "customer_name": {
+                        "type": "string",
+                        "example": "Ramesh Patil"
+                    },
+                    "customer_phone": {
+                        "type": "string",
+                        "example": "9876543210"
+                    },
+                    "route_name": {
+                        "type": "string",
+                        "example": "North Route"
+                    },
+                    "product_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "product_name": {
+                        "type": "string",
+                        "example": "Fresh Cow Milk"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "example": "L"
+                    },
+                    "delivery_date": {
+                        "type": "string",
+                        "format": "date",
+                        "example": "2026-11-06"
+                    },
+                    "shift": {
+                        "type": "string",
+                        "enum": [
+                            "morning",
+                            "evening"
+                        ],
+                        "example": "morning"
+                    },
+                    "quantity": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 1.5
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "delivered",
+                            "undelivered"
+                        ],
+                        "example": "delivered"
+                    },
+                    "on_leave": {
+                        "type": "boolean",
+                        "example": false
+                    }
+                }
+            },
+            "Invoice": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 13
+                    },
+                    "tenant_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "customer_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "customer_name": {
+                        "type": "string",
+                        "example": "Ramesh Patil"
+                    },
+                    "customer_phone": {
+                        "type": "string",
+                        "example": "9876543210"
+                    },
+                    "customer_address": {
+                        "type": "string",
+                        "example": "Plot 42, Shivajinagar"
+                    },
+                    "invoice_number": {
+                        "type": "string",
+                        "example": "INV-2026-10-001"
+                    },
+                    "billing_month": {
+                        "type": "integer",
+                        "example": 10
+                    },
+                    "billing_year": {
+                        "type": "integer",
+                        "example": 2026
+                    },
+                    "total_units": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 45
+                    },
+                    "subtotal_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 2475
+                    },
+                    "tax_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 0
+                    },
+                    "extra_charges": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 50
+                    },
+                    "final_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 2525
+                    },
+                    "paid_amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 0
+                    },
+                    "balance_due": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 2525
+                    },
+                    "payment_status": {
+                        "type": "string",
+                        "enum": [
+                            "unpaid",
+                            "partial",
+                            "paid"
+                        ],
+                        "example": "unpaid"
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "format": "date",
+                        "example": "2026-11-10"
+                    },
+                    "generated_at": {
+                        "type": "string",
+                        "example": "2026-11-01 01:00:00"
+                    }
+                }
+            },
+            "Payment": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "tenant_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "customer_id": {
+                        "type": "integer",
+                        "example": 1
+                    },
+                    "invoice_id": {
+                        "type": "integer",
+                        "example": 13
+                    },
+                    "amount": {
+                        "type": "number",
+                        "format": "float",
+                        "example": 2525
+                    },
+                    "payment_date": {
+                        "type": "string",
+                        "format": "date",
+                        "example": "2026-11-05"
+                    },
+                    "payment_mode": {
+                        "type": "string",
+                        "enum": [
+                            "cash",
+                            "upi",
+                            "bank_transfer",
+                            "cheque"
+                        ],
+                        "example": "upi"
+                    },
+                    "reference_number": {
+                        "type": "string",
+                        "example": "UPI/2026/83948293"
+                    },
+                    "notes": {
+                        "type": "string",
+                        "example": "Google Pay payment"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "example": "2026-11-05 16:30:00"
+                    }
+                }
+            },
+            "Quota": {
+                "type": "object",
+                "properties": {
+                    "max_customers": {
+                        "type": "integer",
+                        "example": 5
+                    },
+                    "current_active_customers": {
+                        "type": "integer",
+                        "example": 3
+                    },
+                    "available_capacity": {
+                        "type": "integer",
+                        "example": 2
+                    },
+                    "plan_name": {
+                        "type": "string",
+                        "example": "Free (5 Customers)"
+                    },
+                    "is_quota_full": {
+                        "type": "boolean",
+                        "example": false
+                    }
+                }
+            }
+        }
+    }
+}

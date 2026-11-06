@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DoodhDesk REST API Documentation (Swagger UI)</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥛</text></svg>">
+    
+    <!-- Swagger UI CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin: 0;
+            background: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #1e293b;
+        }
+        .header-bar {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+            color: #ffffff;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header-brand span.logo {
+            font-size: 28px;
+        }
+        .header-brand h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+        }
+        .header-brand p {
+            margin: 2px 0 0 0;
+            font-size: 13px;
+            opacity: 0.9;
+        }
+        .header-links {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header-links a {
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 8px 14px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.15);
+            transition: all 0.2s ease;
+        }
+        .header-links a:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+        .swagger-ui .topbar {
+            display: none !important;
+        }
+        .swagger-ui .info {
+            margin: 24px 0 !important;
+        }
+        .swagger-ui .info .title {
+            color: #0f172a;
+            font-weight: 800;
+        }
+        .swagger-ui .scheme-container {
+            background: #ffffff;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            margin-bottom: 24px;
+            padding: 16px 24px;
+        }
+        .swagger-ui .btn.authorize {
+            background-color: #0284c7;
+            border-color: #0284c7;
+            color: #ffffff;
+        }
+        .swagger-ui .btn.authorize svg {
+            fill: #ffffff;
+        }
+    </style>
+</head>
+<body>
+    <header class="header-bar">
+        <div class="header-brand">
+            <span class="logo">🥛</span>
+            <div>
+                <h1>DoodhDesk REST API</h1>
+                <p>Interactive Swagger / OpenAPI 3.0 Documentation</p>
+            </div>
+        </div>
+        <div class="header-links">
+            <a href="openapi.json" target="_blank" download="doodhdesk-openapi.json">⬇ Download openapi.json</a>
+            <a href="FUNCTIONAL_SPECIFICATION.md" target="_blank">📋 Functional Specification</a>
+            <a href="/doodhdesk/index.php/dashboard" target="_blank">🚀 Open Web App</a>
+        </div>
+    </header>
+
+    <div id="swagger-ui"></div>
+
+    <!-- Swagger UI Bundle JS -->
+    <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function () {
+            // Determine relative openapi.json URL based on current pathname
+            var specUrl = 'openapi.json';
+            if (window.location.pathname.indexOf('/api/docs') !== -1) {
+                specUrl = window.location.pathname.replace(/\/docs\/?$/, '/docs/openapi.json');
+            }
+
+            const ui = SwaggerUIBundle({
+                url: specUrl,
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "BaseLayout",
+                filter: true,
+                persistAuthorization: true,
+                displayRequestDuration: true,
+                tryItOutEnabled: true,
+                docExpansion: "list"
+            });
+            window.ui = ui;
+        };
+    </script>
+</body>
+</html>

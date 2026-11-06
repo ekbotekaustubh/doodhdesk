@@ -465,6 +465,28 @@ runApiTest("API Super Admin: Platform Stats, Settings & Tenant Governance", func
     }
 }, $passed, $failed);
 
+runApiTest("API Documentation: Swagger UI and OpenAPI 3.0 Specification Serving", function () {
+    $docsPath = dirname(__DIR__) . '/docs';
+    if (!file_exists($docsPath . '/openapi.json')) {
+        throw new \Exception("docs/openapi.json missing");
+    }
+    if (!file_exists($docsPath . '/index.html')) {
+        throw new \Exception("docs/index.html missing");
+    }
+
+    $jsonContent = file_get_contents($docsPath . '/openapi.json');
+    $spec = json_decode($jsonContent, true);
+    if (!is_array($spec) || empty($spec['paths']) || count($spec['paths']) < 35) {
+        throw new \Exception("Invalid openapi.json structure or path count insufficient: " . count($spec['paths'] ?? []));
+    }
+
+    // Verify symlink doc -> docs
+    $symlinkDoc = dirname(__DIR__) . '/doc';
+    if (!file_exists($symlinkDoc . '/openapi.json')) {
+        throw new \Exception("doc/openapi.json symlink access failed");
+    }
+}, $passed, $failed);
+
 // Clean up test customer and test product
 if ($newCustomerId > 0) {
     $db->execute("DELETE FROM customers WHERE id = ?", [$newCustomerId]);

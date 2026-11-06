@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use App\Controllers\Api\AdminApiController;
+use App\Controllers\Api\ApiDocsController;
 use App\Controllers\Api\AuthApiController;
 use App\Controllers\Api\CustomerApiController;
 use App\Controllers\Api\DashboardApiController;
@@ -15,6 +16,10 @@ use App\Controllers\Api\SubscriptionApiController;
 use App\Core\Router;
 
 return function (Router $router): void {
+    // 0. API Documentation (Interactive Swagger UI & OpenAPI 3.0 Spec)
+    $router->get('/api/docs', [ApiDocsController::class, 'ui']);
+    $router->get('/api/docs/openapi.json', [ApiDocsController::class, 'spec']);
+
     // 1. Authentication
     $router->post('/api/auth/login', [AuthApiController::class, 'login']);
     $router->post('/api/auth/register', [AuthApiController::class, 'register']);
