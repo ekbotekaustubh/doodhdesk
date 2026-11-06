@@ -63,7 +63,7 @@ final class AuthController
     public function registerView(Request $request): void
     {
         if (Auth::isTenant()) {
-            Response::redirect(url('/'));
+            Auth::logout();
         }
         View::render('auth/register', [
             'error' => Auth::flash('error')

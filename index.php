@@ -14,8 +14,15 @@ use App\Core\Router;
 
 Auth::startSession();
 
-// Auto-seed or auto-login to Tenant 1 for frictionless preview if no session exists yet
-if (!Auth::isTenant() && !Auth::isAdmin() && empty($_GET['msg']) && !in_array($_SERVER['REQUEST_URI'] ?? '', ['/login', '/register', '/admin/login'])) {
+$request = new Request();
+$path = $request->path();
+
+$authPaths = ['/login', '/register', '/admin/login', '/logout'];
+$isAuthPath = in_array($path, $authPaths, true) || str_starts_with($path, '/demo');
+
+// Auto-seed or auto-login to Tenant 1 for frictionless preview if no session exists yet,
+// but ONLY when accessing the root dashboard directly, NEVER on auth or demo routes
+if (!Auth::isTenant() && !Auth::isAdmin() && empty($_GET['msg']) && !$isAuthPath && ($path === '/' || $path === '')) {
     try {
         $db = Database::getInstance();
         $defaultTenant = $db->fetchOne("SELECT * FROM tenants WHERE id = 1 AND status = 'active'");
@@ -27,7 +34,6 @@ if (!Auth::isTenant() && !Auth::isAdmin() && empty($_GET['msg']) && !in_array($_
     }
 }
 
-$request = new Request();
 $router = new Router();
 
 $routes = require __DIR__ . '/routes.php';
