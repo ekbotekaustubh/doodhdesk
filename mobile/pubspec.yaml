@@ -1,0 +1,50 @@
+name: doodhdesk_mobile
+description: "DoodhDesk Cross-Platform Mobile ERP for iOS and Android with Offline-First Sync"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Networking & REST API
+  dio: ^5.7.0
+
+  # Offline Local Database
+  sqflite: ^2.4.1
+  path_provider: ^2.1.5
+  path: ^1.9.0
+
+  # Offline Network Connectivity Listener
+  connectivity_plus: ^6.1.1
+
+  # Idempotency & Queue Keys
+  uuid: ^4.5.1
+
+  # Secure Credentials Storage (iOS Keychain & Android KeyStore)
+  flutter_secure_storage: ^9.2.2
+
+  # Date, Time & Number Formatting
+  intl: ^0.19.0
+
+  # Hardware: WhatsApp Intent & Phone Dialer
+  url_launcher: ^6.3.1
+
+  # Hardware: Dynamic UPI QR Code for Doorstep Collection
+  qr_flutter: ^4.1.0
+
+  # Local Preferences & Cache
+  shared_preferences: ^2.3.3
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
