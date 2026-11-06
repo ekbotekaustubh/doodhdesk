@@ -1,6 +1,6 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /milkman/
+    RewriteBase /doodhdesk/
 
     # Direct access to real files and directories
     RewriteCond %{REQUEST_FILENAME} !-f

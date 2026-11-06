@@ -244,6 +244,12 @@ final class DeliveryService
         ];
     }
 
+    public function getShiftStats(int $tenantId, string $date, string $shift): array
+    {
+        $sheet = $this->getRunSheet($tenantId, $date, $shift);
+        return $sheet['stats'];
+    }
+
     public function recordDelivery(
         int $tenantId,
         int $customerId,

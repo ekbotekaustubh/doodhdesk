@@ -18,7 +18,7 @@ $request = new Request();
 $path = $request->path();
 
 $authPaths = ['/login', '/register', '/admin/login', '/logout'];
-$isAuthPath = in_array($path, $authPaths, true) || str_starts_with($path, '/demo');
+$isAuthPath = in_array($path, $authPaths, true) || str_starts_with($path, '/demo') || str_starts_with($path, '/api');
 
 // Auto-seed or auto-login to Tenant 1 for frictionless preview if no session exists yet,
 // but ONLY when accessing the root dashboard directly, NEVER on auth or demo routes

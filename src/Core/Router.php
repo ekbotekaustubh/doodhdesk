@@ -17,6 +17,21 @@ final class Router
         $this->addRoute('POST', $pattern, $handler, $middleware);
     }
 
+    public function put(string $pattern, array|callable $handler, array $middleware = []): void
+    {
+        $this->addRoute('PUT', $pattern, $handler, $middleware);
+    }
+
+    public function delete(string $pattern, array|callable $handler, array $middleware = []): void
+    {
+        $this->addRoute('DELETE', $pattern, $handler, $middleware);
+    }
+
+    public function patch(string $pattern, array|callable $handler, array $middleware = []): void
+    {
+        $this->addRoute('PATCH', $pattern, $handler, $middleware);
+    }
+
     public function any(string $pattern, array|callable $handler, array $middleware = []): void
     {
         $this->addRoute('ANY', $pattern, $handler, $middleware);
@@ -82,6 +97,13 @@ final class Router
 
         // 404
         http_response_code(404);
+        if (str_starts_with($path, '/api') || str_contains((string)($request->getHeader('accept') ?? ''), 'application/json')) {
+            Response::json([
+                'success' => false,
+                'error' => "API endpoint not found: {$method} {$path}",
+                'code' => 'NOT_FOUND'
+            ], 404);
+        }
         View::render('errors/404', ['path' => $path], 'main');
     }
 
@@ -90,6 +112,8 @@ final class Router
         match ($middleware) {
             'tenant' => Auth::requireTenant(),
             'admin' => Auth::requireAdmin(),
+            'api.tenant' => Auth::requireApiTenant(),
+            'api.admin' => Auth::requireApiAdmin(),
             default => null,
         };
     }

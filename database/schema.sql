@@ -3,6 +3,7 @@
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS api_tokens;
 DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS invoices;
 DROP TABLE IF EXISTS daily_delivery_items;
@@ -88,6 +89,7 @@ CREATE TABLE tenant_subscriptions (
     valid_until DATE NULL,
     payment_status ENUM('active', 'expired', 'free') DEFAULT 'free',
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_tenant_subscription_tenant (tenant_id),
     INDEX idx_tenant_sub (tenant_id, payment_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -230,4 +232,20 @@ CREATE TABLE payments (
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL,
     INDEX idx_tenant_customer_payments (tenant_id, customer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 12. API Access Tokens (Mobile Apps & Headless REST API)
+CREATE TABLE api_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NULL,
+    admin_id INT NULL,
+    token_hash VARCHAR(64) UNIQUE NOT NULL,
+    token_type ENUM('tenant', 'admin') NOT NULL DEFAULT 'tenant',
+    name VARCHAR(100) DEFAULT 'default',
+    last_used_at TIMESTAMP NULL,
+    expires_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (admin_id) REFERENCES super_admins(id) ON DELETE CASCADE,
+    INDEX idx_api_tokens (token_hash, token_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

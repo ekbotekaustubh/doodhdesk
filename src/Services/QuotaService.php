@@ -38,6 +38,11 @@ final class QuotaService
         return $settings;
     }
 
+    public function getPlatformSettings(): array
+    {
+        return $this->getSystemSettings();
+    }
+
     public function getTenantQuota(int $tenantId): array
     {
         $sys = $this->getSystemSettings();

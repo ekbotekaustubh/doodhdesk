@@ -73,4 +73,8 @@ return function (Router $router): void {
     $router->post('/admin/settings', [SuperAdminController::class, 'updateSettings'], ['admin']);
     $router->post('/admin/tenants/{id}/toggle-status', [SuperAdminController::class, 'toggleTenantStatus'], ['admin']);
     $router->post('/admin/tenants/{id}/quota', [SuperAdminController::class, 'adjustQuota'], ['admin']);
+
+    // 8. REST API Endpoints (Mobile & Headless)
+    $apiRoutes = require __DIR__ . '/routes_api.php';
+    $apiRoutes($router);
 };

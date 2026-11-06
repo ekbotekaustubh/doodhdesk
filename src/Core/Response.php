@@ -3,23 +3,54 @@ declare(strict_types=1);
 
 namespace App\Core;
 
+class HttpResponseException extends \RuntimeException
+{
+    public function __construct(public readonly mixed $data = null, public readonly int $statusCode = 200)
+    {
+        parent::__construct('HTTP Response Handled');
+    }
+}
+
 final class Response
 {
+    private static int $lastStatusCode = 200;
+
+    public static function getStatusCode(): int
+    {
+        return self::$lastStatusCode;
+    }
+
     public static function json(mixed $data, int $statusCode = 200, array $headers = []): void
     {
-        http_response_code($statusCode);
-        header('Content-Type: application/json; charset=utf-8');
-        foreach ($headers as $name => $value) {
-            header("{$name}: {$value}");
+        self::$lastStatusCode = $statusCode;
+        if (!headers_sent()) {
+            http_response_code($statusCode);
+            header('Content-Type: application/json; charset=utf-8');
+            foreach ($headers as $name => $value) {
+                header("{$name}: {$value}");
+            }
         }
         echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+        if (defined('DOODHDESK_TEST_RUNNER') && DOODHDESK_TEST_RUNNER) {
+            throw new HttpResponseException($data, $statusCode);
+        }
+
         exit;
     }
 
     public static function redirect(string $url, int $statusCode = 302): void
     {
-        http_response_code($statusCode);
-        header("Location: {$url}");
+        self::$lastStatusCode = $statusCode;
+        if (!headers_sent()) {
+            http_response_code($statusCode);
+            header("Location: {$url}");
+        }
+
+        if (defined('DOODHDESK_TEST_RUNNER') && DOODHDESK_TEST_RUNNER) {
+            throw new HttpResponseException(['redirect' => $url], $statusCode);
+        }
+
         exit;
     }
 
