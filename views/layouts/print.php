@@ -31,6 +31,11 @@
             ← Back
         </a>
         <div class="flex items-center gap-2">
+            <?php if (!empty($invoice['id'])): ?>
+                <a href="<?= url("/invoices/{$invoice['id']}/pdf?type=a4") ?>" target="_blank" class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg text-sm font-bold shadow-sm transition">
+                    📥 Download PDF
+                </a>
+            <?php endif; ?>
             <button onclick="window.print()" class="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-md transition">
                 🖨️ Print Now
             </button>

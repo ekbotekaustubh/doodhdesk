@@ -3,9 +3,47 @@
 /** @var array $breakdown */
 /** @var array $tenant */
 /** @var array $settings */
+$isPdf = !empty($isPdf);
 $format = $format ?? '80mm'; // '80mm' or '58mm'
-$widthClass = $format === '58mm' ? 'max-w-[240px]' : 'max-w-[320px]';
+$widthPx = $format === '58mm' ? 190 : 260;
 ?>
+<?php if ($isPdf): ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Thermal Bill #INV-<?= $invoice['id'] ?></title>
+<style>
+    @page {
+        margin: 4mm;
+        size: <?= $format === '58mm' ? '58mm 250mm' : '80mm 250mm' ?>;
+    }
+    * {
+        box-sizing: border-box;
+    }
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'DejaVu Sans Mono', Consolas, monospace;
+        font-size: 9px;
+        line-height: 1.25;
+        color: #000000;
+        background: #ffffff;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .font-bold { font-weight: bold; }
+    .border-b-dashed { border-bottom: 1px dashed #000000; }
+    .py-1 { padding-top: 3px; padding-bottom: 3px; }
+    .py-2 { padding-top: 5px; padding-bottom: 5px; }
+</style>
+</head>
+<body>
+<?php else: ?>
 <!-- Thermal Receipt Format Switcher (Hidden when printing) -->
 <div class="no-print max-w-sm mx-auto mb-4 flex items-center justify-center gap-2">
     <span class="text-xs font-bold text-slate-500">Receipt Width:</span>
@@ -15,160 +53,182 @@ $widthClass = $format === '58mm' ? 'max-w-[240px]' : 'max-w-[320px]';
     <a href="<?= url("/invoices/{$invoice['id']}/thermal?format=58mm") ?>" class="px-3 py-1 text-xs font-bold rounded-lg border <?= $format === '58mm' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700' ?>">
         58mm Mini POS
     </a>
-    <a href="<?= url("/invoices/{$invoice['id']}/pdf?type=thermal80") ?>" target="_blank" class="px-2 py-1 text-xs font-bold rounded-lg bg-blue-100 text-blue-800">
-        PDF
+    <a href="<?= url("/invoices/{$invoice['id']}/pdf?type=thermal" . ($format === '58mm' ? '58' : '80')) ?>" target="_blank" class="px-2 py-1 text-xs font-bold rounded-lg bg-blue-100 text-blue-800">
+        📥 PDF
     </a>
 </div>
 
-<!-- Receipt Paper Area -->
-<div class="<?= $widthClass ?> mx-auto bg-white p-4 shadow-md border border-slate-300 font-mono text-[11px] leading-tight text-black print-shadow-none">
+<style>
+    .thermal-box {
+        width: <?= $widthPx ?>px;
+        margin: 0 auto;
+        background: #ffffff;
+        padding: 12px;
+        border: 1px solid #cbd5e1;
+        font-family: 'DejaVu Sans Mono', Consolas, monospace;
+        font-size: 10px;
+        line-height: 1.25;
+        color: #000000;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    @media print {
+        body { background: #ffffff !important; padding: 0 !important; }
+        .thermal-box { box-shadow: none !important; border: none !important; padding: 0 !important; }
+        .no-print { display: none !important; }
+    }
+    table { width: 100%; border-collapse: collapse; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .font-bold { font-weight: bold; }
+    .border-b-dashed { border-bottom: 1px dashed #000000; }
+    .py-1 { padding-top: 3px; padding-bottom: 3px; }
+    .py-2 { padding-top: 5px; padding-bottom: 5px; }
+</style>
+<?php endif; ?>
+
+<div class="<?= $isPdf ? '' : 'thermal-box' ?>" style="<?= $isPdf ? 'width: 100%; padding: 4px;' : '' ?>">
     <!-- Header -->
-    <div class="text-center pb-2 border-b border-dashed border-black space-y-0.5">
-        <div class="text-sm font-black uppercase"><?= e($tenant['business_name']) ?></div>
+    <div class="text-center border-b-dashed py-1">
+        <div style="font-size: 12px; font-weight: bold; text-transform: uppercase;"><?= e($tenant['business_name']) ?></div>
         <div>Owner: <?= e($tenant['owner_name']) ?></div>
         <div>Tel: <?= e($tenant['phone']) ?></div>
         <?php if (!empty($settings['tax_number'])): ?>
             <div><?= e($settings['tax_label'] ?? 'GST') ?>: <?= e($settings['tax_number']) ?></div>
         <?php endif; ?>
-        <div class="font-bold pt-1">*** MILK DELIVERY BILL ***</div>
+        <div class="font-bold" style="padding-top: 3px;">*** MILK DELIVERY BILL ***</div>
     </div>
 
     <!-- Bill Meta -->
-    <div class="py-2 border-b border-dashed border-black space-y-0.5">
-        <div class="flex justify-between">
-            <span>Bill #: INV-<?= $invoice['id'] ?></span>
-            <span><?= date('d/m/y', strtotime($invoice['generated_at'])) ?></span>
-        </div>
-        <div class="flex justify-between">
-            <span>Month: <?= date('M Y', mktime(0, 0, 0, (int)$invoice['billing_month'], 10, (int)$invoice['billing_year'])) ?></span>
-            <span class="font-bold"><?= strtoupper($invoice['payment_status']) ?></span>
-        </div>
-        <div class="pt-1 font-bold">Customer: <?= e($invoice['customer_name']) ?></div>
-        <div class="truncate">Phone: <?= e($invoice['customer_phone']) ?></div>
-        <div class="truncate text-[10px]">Route: <?= e($invoice['route_name'] ?? 'Main') ?></div>
-        <div class="truncate text-[10px] font-bold">Milk: <?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?></div>
+    <div class="border-b-dashed py-1">
+        <table>
+            <tr>
+                <td>Bill #: INV-<?= $invoice['id'] ?></td>
+                <td class="text-right"><?= date('d/m/y', strtotime($invoice['generated_at'])) ?></td>
+            </tr>
+            <tr>
+                <td>Month: <?= date('M Y', mktime(0, 0, 0, (int)$invoice['billing_month'], 10, (int)$invoice['billing_year'])) ?></td>
+                <td class="text-right font-bold"><?= strtoupper($invoice['payment_status']) ?></td>
+            </tr>
+        </table>
+        <div class="font-bold" style="padding-top: 2px;">Customer: <?= e($invoice['customer_name']) ?></div>
+        <div>Phone: <?= e($invoice['customer_phone']) ?></div>
+        <div>Route: <?= e($invoice['route_name'] ?? 'Main') ?></div>
+        <div class="font-bold">Milk: <?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?></div>
     </div>
 
-    <!-- Delivery Tracking Summary (Anti-Error Assurance) -->
-    <div class="py-2 border-b border-dashed border-black space-y-0.5 text-[10px]">
-        <div class="font-bold uppercase">Deliveries Summary:</div>
-        <div class="flex justify-between">
-            <span>Delivered Days:</span>
-            <span><?= $breakdown['delivered_days'] ?? 0 ?> Days</span>
-        </div>
-        <div class="flex justify-between text-black">
-            <span>Skipped / Leave Days:</span>
-            <span><?= ($breakdown['skipped_days'] ?? 0) + ($breakdown['leave_days'] ?? 0) ?> Days (0L)</span>
-        </div>
-        <div class="flex justify-between font-bold">
-            <span>Total Delivered Liters:</span>
-            <span><?= number_format((float)$invoice['total_units'], 1) ?> L</span>
-        </div>
+    <!-- Delivery Tracking Summary -->
+    <div class="border-b-dashed py-1" style="font-size: 8.5px;">
+        <div class="font-bold" style="text-transform: uppercase;">Deliveries Summary:</div>
+        <table>
+            <tr>
+                <td>Delivered Days:</td>
+                <td class="text-right font-bold"><?= $breakdown['delivered_days'] ?? 0 ?> Days</td>
+            </tr>
+            <tr>
+                <td>Skipped / Leave Days:</td>
+                <td class="text-right"><?= ($breakdown['skipped_days'] ?? 0) + ($breakdown['leave_days'] ?? 0) ?> Days (0L)</td>
+            </tr>
+            <tr class="font-bold">
+                <td>Total Liters:</td>
+                <td class="text-right"><?= number_format((float)$invoice['total_units'], 1) ?> L</td>
+            </tr>
+        </table>
     </div>
-
-    <!-- Daily Milk Matrix on Thermal Receipt -->
-    <?php if (!empty($breakdown['calendar_matrix'])): ?>
-        <div class="py-2 border-b border-dashed border-black space-y-1 text-[9px]">
-            <div class="font-bold uppercase tracking-wider text-[10px]">Daily Milk Matrix (Date: Qty)</div>
-            <div class="grid grid-cols-4 gap-1 text-center font-mono">
-                <?php foreach ($breakdown['calendar_matrix'] as $dNum => $dInfo): ?>
-                    <div class="p-0.5 border border-dotted border-black rounded <?= $dInfo['status'] === 'delivered' ? 'bg-slate-100 font-bold' : ($dInfo['status'] === 'skipped' ? 'text-slate-500' : 'text-slate-400') ?>">
-                        <span><?= $dNum ?>:</span>
-                        <span><?= $dInfo['status'] === 'delivered' ? (float)$dInfo['quantity'] . 'L' : ($dInfo['status'] === 'skipped' ? 'Skip' : ($dInfo['status'] === 'leave' ? 'Lv' : '-')) ?></span>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-    <?php endif; ?>
 
     <!-- Charges Breakdown -->
-    <div class="py-2 border-b border-dashed border-black space-y-1">
-        <!-- Products / Milk Subtotal -->
-        <?php if (!empty($breakdown['products'])): ?>
-            <?php foreach ($breakdown['products'] as $prod): ?>
-                <div class="flex justify-between pb-1 border-b border-dotted border-slate-200">
-                    <div>
-                        <div class="font-bold"><?= e($prod['name']) ?></div>
-                        <div class="text-[9px]"><?= number_format((float)$prod['total_units'], 1) ?> <?= e($prod['unit']) ?> @ <?= formatMoney($prod['unit_price']) ?>/<?= e($prod['unit']) ?></div>
-                    </div>
-                    <div class="font-bold"><?= formatMoney($prod['subtotal']) ?></div>
-                </div>
-            <?php endforeach; ?>
-        <?php else: ?>
-            <div class="flex justify-between">
-                <div>
-                    <div class="font-bold"><?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?> Total</div>
-                    <div class="text-[9px]"><?= number_format((float)$invoice['total_units'], 1) ?>L @ <?= formatMoney($breakdown['customer_rate'] ?? 65) ?>/L</div>
-                </div>
-                <div class="font-bold"><?= formatMoney($invoice['milk_subtotal']) ?></div>
-            </div>
-        <?php endif; ?>
+    <div class="border-b-dashed py-1">
+        <table>
+            <?php if (!empty($breakdown['products'])): ?>
+                <?php foreach ($breakdown['products'] as $prod): ?>
+                    <tr>
+                        <td style="padding-bottom: 2px;">
+                            <div class="font-bold"><?= e($prod['name']) ?></div>
+                            <div style="font-size: 8px;"><?= number_format((float)$prod['total_units'], 1) ?> <?= e($prod['unit']) ?> @ <?= formatMoney($prod['unit_price']) ?></div>
+                        </td>
+                        <td class="text-right font-bold" style="vertical-align: top;"><?= formatMoney($prod['subtotal']) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <tr>
+                    <td style="padding-bottom: 2px;">
+                        <div class="font-bold"><?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?> Total</div>
+                        <div style="font-size: 8px;"><?= number_format((float)$invoice['total_units'], 1) ?>L @ <?= formatMoney($breakdown['customer_rate'] ?? 65) ?>/L</div>
+                    </td>
+                    <td class="text-right font-bold" style="vertical-align: top;"><?= formatMoney($invoice['milk_subtotal']) ?></td>
+                </tr>
+            <?php endif; ?>
 
-        <!-- Custom Surcharges -->
-        <?php if (!empty($breakdown['charges'])): ?>
-            <?php foreach ($breakdown['charges'] as $ch): ?>
-                <div class="flex justify-between text-[10px]">
-                    <div class="truncate max-w-[150px]">+ <?= e($ch['name']) ?></div>
-                    <div><?= formatMoney($ch['amount']) ?></div>
-                </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
+            <?php if (!empty($breakdown['charges'])): ?>
+                <?php foreach ($breakdown['charges'] as $ch): ?>
+                    <tr style="font-size: 8.5px;">
+                        <td>+ <?= e($ch['name']) ?></td>
+                        <td class="text-right"><?= formatMoney($ch['amount']) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
 
-        <!-- Taxes -->
-        <?php if (!empty($breakdown['tax_enabled']) && (float)$invoice['tax_amount'] > 0): ?>
-            <div class="flex justify-between text-[10px]">
-                <div>+ <?= e($breakdown['tax_label'] ?? 'GST') ?> (<?= (float)($breakdown['tax_percentage'] ?? 0) ?>%)</div>
-                <div><?= formatMoney($invoice['tax_amount']) ?></div>
-            </div>
-        <?php endif; ?>
+            <?php if (!empty($breakdown['tax_enabled']) && (float)$invoice['tax_amount'] > 0): ?>
+                <tr style="font-size: 8.5px;">
+                    <td>+ <?= e($breakdown['tax_label'] ?? 'GST') ?> (<?= (float)($breakdown['tax_percentage'] ?? 0) ?>%)</td>
+                    <td class="text-right"><?= formatMoney($invoice['tax_amount']) ?></td>
+                </tr>
+            <?php endif; ?>
 
-        <!-- Previous Balance -->
-        <?php if ((float)$invoice['previous_balance'] > 0): ?>
-            <div class="flex justify-between text-[10px]">
-                <div>+ Previous Balance:</div>
-                <div><?= formatMoney($invoice['previous_balance']) ?></div>
-            </div>
-        <?php endif; ?>
+            <?php if ((float)$invoice['previous_balance'] > 0): ?>
+                <tr style="font-size: 8.5px;">
+                    <td>+ Previous Balance:</td>
+                    <td class="text-right"><?= formatMoney($invoice['previous_balance']) ?></td>
+                </tr>
+            <?php endif; ?>
 
-        <!-- Payments Received -->
-        <?php 
-        $paymentsRec = (float)($breakdown['payments_received'] ?? 0.0);
-        if ($paymentsRec > 0): 
-        ?>
-            <div class="flex justify-between text-[10px]">
-                <div>- Payments Received:</div>
-                <div>-<?= formatMoney($paymentsRec) ?></div>
-            </div>
-        <?php endif; ?>
+            <?php 
+            $paymentsRec = (float)($breakdown['payments_received'] ?? 0.0);
+            if ($paymentsRec > 0): 
+            ?>
+                <tr style="font-size: 8.5px;">
+                    <td>- Payments Received:</td>
+                    <td class="text-right">-<?= formatMoney($paymentsRec) ?></td>
+                </tr>
+            <?php endif; ?>
+        </table>
     </div>
 
     <!-- Total Payable -->
-    <div class="py-2 border-b-2 border-black flex justify-between items-center text-xs font-black">
-        <span>TOTAL DUE:</span>
-        <span class="text-sm"><?= formatMoney($invoice['final_amount']) ?></span>
+    <div class="py-2" style="border-bottom: 2px solid #000000;">
+        <table>
+            <tr class="font-bold" style="font-size: 11px;">
+                <td>TOTAL DUE:</td>
+                <td class="text-right" style="font-size: 13px;"><?= formatMoney($invoice['final_amount']) ?></td>
+            </tr>
+        </table>
     </div>
 
     <!-- QR Code & Footer -->
-    <div class="pt-3 text-center space-y-2">
-        <div class="text-[10px] font-bold">SCAN & PAY VIA UPI</div>
-        <div class="flex justify-center">
+    <div class="text-center py-2">
+        <div class="font-bold" style="font-size: 8.5px; margin-bottom: 4px;">SCAN & PAY VIA UPI</div>
+        <div style="margin: 0 auto; text-align: center;">
             <?= \App\Services\QrCodeService::renderQrTag(
                 $settings['upi_qr_path'] ?? null,
                 $settings['upi_id'] ?? null,
                 $tenant['business_name'] ?? 'DairyFlow',
                 (float)$invoice['final_amount'],
-                100,
+                85,
                 "Milk INV-{$invoice['id']}"
             ) ?>
         </div>
         <?php if (!empty($settings['upi_id'])): ?>
-            <div class="text-[10px]">UPI: <?= e($settings['upi_id']) ?></div>
+            <div style="font-size: 8.5px; margin-top: 4px;">UPI: <?= e($settings['upi_id']) ?></div>
         <?php endif; ?>
-        <div class="text-[9px] pt-1 italic text-slate-700">
+        <div style="font-size: 8px; font-style: italic; color: #475569; margin-top: 4px;">
             <?= e($settings['invoice_footer_note'] ?? 'Thank you! Pure milk daily.') ?>
         </div>
-        <div class="text-[8px] text-slate-500 pt-1">
+        <div style="font-size: 7.5px; color: #64748b; margin-top: 3px;">
             DairyFlow Zero-Dispute Invoicing
         </div>
     </div>
 </div>
+
+<?php if ($isPdf): ?>
+</body>
+</html>
+<?php endif; ?>
