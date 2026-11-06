@@ -462,61 +462,70 @@ final class CustomerController
         // UTF-8 BOM for Microsoft Excel compatibility
         fwrite($out, "\xEF\xBB\xBF");
 
-        // Headers
+        // Headers: Option A product-specific columns
         fputcsv($out, [
             'Name',
             'Phone',
             'Address',
             'Route',
-            'Milk Type',
-            'Default Quantity',
-            'Rate Per Unit',
+            'Cow Qty (L)',
+            'Cow Rate',
+            'Buffalo Qty (L)',
+            'Buffalo Rate',
             'Status'
         ], ',', '"', "\\");
 
         // Sample rows demonstrating different options
+        // 1. Aarav Sharma: Cow milk only (2.0L @ ₹65.00)
         fputcsv($out, [
             'Aarav Sharma',
             '9822011111',
             'Flat 101, Gokul Heights, Station Road',
             'Green Valley Route',
-            'cow',
             '2.00',
             '65.00',
+            '',
+            '',
             'active'
         ], ',', '"', "\\");
 
+        // 2. Priya Verma: Buffalo milk only (1.5L @ ₹75.00)
         fputcsv($out, [
             'Priya Verma',
             '9822022222',
             'B-204, Sunrise Residency, Near Temple',
             'Green Valley Route',
-            'buffalo',
+            '',
+            '',
             '1.50',
             '75.00',
             'active'
         ], ',', '"', "\\");
 
+        // 3. Rajesh Gupta: Both milks (1.0L Cow @ ₹65.00, 2.0L Buffalo @ ₹75.00)
         fputcsv($out, [
             'Rajesh Gupta',
             '9822033333',
             'House #14, Civil Lines, Main Market',
             'North City Route',
-            'cow,buffalo',
-            '2.50',
-            '70.00',
+            '1.00',
+            '65.00',
+            '2.00',
+            '75.00',
             'active'
         ], ',', '"', "\\");
 
+        // 4. Sneha Kulkarni: Default catalog rate (leaving Rate empty automatically uses product catalog rate)
         fputcsv($out, [
             'Sneha Kulkarni',
             '9822044444',
             'Flat 302, Palm Grove Society',
             'Green Valley Route',
-            'cow',
             '1.00',
-            '60.00',
-            'inactive'
+            '',
+            '',
+            '',
+            'active'
         ], ',', '"', "\\");
 
         fclose($out);
@@ -585,38 +594,44 @@ final class CustomerController
             'Phone',
             'Address',
             'Route',
-            'Milk Types',
-            'Default Quantity (L)',
-            'Rate Per Unit',
+            'Cow Qty (L)',
+            'Cow Rate',
+            'Buffalo Qty (L)',
+            'Buffalo Rate',
             'Status',
             'Created Date'
         ], ',', '"', "\\");
 
-        $subsSummary = $this->db->fetchAll(
-            "SELECT cs.customer_id, 
-                    SUM(cs.default_quantity) as total_qty,
-                    COALESCE(cs.custom_rate, p.default_rate) as primary_rate
+        $subsRows = $this->db->fetchAll(
+            "SELECT cs.customer_id, p.code, cs.default_quantity, COALESCE(cs.custom_rate, p.default_rate) as effective_rate
              FROM customer_subscriptions cs
              JOIN products p ON p.id = cs.product_id
-             WHERE cs.tenant_id = ? AND cs.is_active = 1
-             GROUP BY cs.customer_id",
+             WHERE cs.tenant_id = ? AND cs.is_active = 1",
             [$tenantId]
         );
-        $qtyMap = array_column($subsSummary, 'total_qty', 'customer_id');
-        $rateMap = array_column($subsSummary, 'primary_rate', 'customer_id');
+        $subsByCust = [];
+        foreach ($subsRows as $sr) {
+            $subsByCust[(int)$sr['customer_id']][$sr['code']] = [
+                'qty' => (float)$sr['default_quantity'],
+                'rate' => (float)$sr['effective_rate']
+            ];
+        }
 
         foreach ($customers as $c) {
-            $cQty = (float)($qtyMap[$c['id']] ?? 1.0);
-            $cRate = (float)($rateMap[$c['id']] ?? 60.0);
+            $cid = (int)$c['id'];
+            $cowSub = $subsByCust[$cid]['cow'] ?? null;
+            $bufSub = $subsByCust[$cid]['buffalo'] ?? null;
+
             fputcsv($out, [
                 $c['id'],
                 $c['name'],
                 $c['phone'],
                 $c['address'] ?? '',
                 $c['route_name'] ?? 'Main Route',
-                $c['milk_types'] ?? 'cow',
-                number_format($cQty, 2, '.', ''),
-                number_format($cRate, 2, '.', ''),
+                $cowSub ? number_format($cowSub['qty'], 2, '.', '') : '',
+                $cowSub ? number_format($cowSub['rate'], 2, '.', '') : '',
+                $bufSub ? number_format($bufSub['qty'], 2, '.', '') : '',
+                $bufSub ? number_format($bufSub['rate'], 2, '.', '') : '',
                 $c['status'],
                 substr((string)($c['created_at'] ?? ''), 0, 10)
             ], ',', '"', "\\");
@@ -629,6 +644,11 @@ final class CustomerController
     public function importCsv(Request $request): void
     {
         $tenantId = Auth::tenantId();
+
+        // Ensure default products exist for tenant
+        $this->productService->ensureDefaultProducts($tenantId);
+        $cowProd = $this->db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = ? AND code = 'cow'", [$tenantId]);
+        $bufProd = $this->db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = ? AND code = 'buffalo'", [$tenantId]);
 
         // 1. Verify file upload
         $file = $request->file('csv_file');
@@ -680,14 +700,28 @@ final class CustomerController
                 $colMap['address'] = $idx;
             } elseif (in_array($clean, ['route', 'routename', 'area', 'sector'], true)) {
                 $colMap['route_name'] = $idx;
-            } elseif (in_array($clean, ['milktype', 'milktypes', 'milk', 'type', 'types'], true)) {
+            } elseif (in_array($clean, ['status', 'accountstatus', 'state'], true)) {
+                $colMap['status'] = $idx;
+            }
+            // Option A: Product-specific Cow columns
+            elseif (in_array($clean, ['cowqty', 'cowqtyl', 'cowquantity', 'cowquantityl', 'cowl', 'cowliters', 'cowmilk', 'cowmilkl', 'cowmilkqty'], true)) {
+                $colMap['cow_qty'] = $idx;
+            } elseif (in_array($clean, ['cowrate', 'cowprice', 'cowrateperunit', 'cowrateperl', 'cowunitrate'], true)) {
+                $colMap['cow_rate'] = $idx;
+            }
+            // Option A: Product-specific Buffalo columns
+            elseif (in_array($clean, ['buffaloqty', 'buffaloqtyl', 'buffaloquantity', 'buffaloquantityl', 'buffalol', 'buffaloliters', 'buffalomilk', 'buffalomilkl', 'buffalomilkqty'], true)) {
+                $colMap['buffalo_qty'] = $idx;
+            } elseif (in_array($clean, ['buffalorate', 'buffaloprice', 'buffalorateperunit', 'buffalorateperl', 'buffalounitrate'], true)) {
+                $colMap['buffalo_rate'] = $idx;
+            }
+            // Legacy generic columns
+            elseif (in_array($clean, ['milktype', 'milktypes', 'milk', 'type', 'types'], true)) {
                 $colMap['milk_types'] = $idx;
             } elseif (in_array($clean, ['defaultquantity', 'quantity', 'qty', 'dailyquantity', 'liters', 'defaultquantityl'], true)) {
                 $colMap['default_quantity'] = $idx;
             } elseif (in_array($clean, ['rateperunit', 'rate', 'price', 'rateperliter', 'unitrate'], true)) {
                 $colMap['rate_per_unit'] = $idx;
-            } elseif (in_array($clean, ['status', 'accountstatus', 'state'], true)) {
-                $colMap['status'] = $idx;
             }
         }
 
@@ -741,27 +775,76 @@ final class CustomerController
                 $routeName = 'Main Route';
             }
 
-            // Parse Milk Type
-            $rawMilk = isset($colMap['milk_types']) ? strtolower(trim((string)($row[$colMap['milk_types']] ?? ''))) : 'cow';
-            $hasCow = str_contains($rawMilk, 'cow');
-            $hasBuffalo = str_contains($rawMilk, 'buffalo');
-            $isBoth = str_contains($rawMilk, 'both') || ($hasCow && $hasBuffalo);
+            // Build subscription items (Option A with fallback)
+            $subsList = [];
+            $hasOptionA = isset($colMap['cow_qty']) || isset($colMap['buffalo_qty']);
 
-            if ($isBoth) {
-                $milkTypes = 'cow,buffalo';
-            } elseif ($hasBuffalo) {
-                $milkTypes = 'buffalo';
-            } else {
-                $milkTypes = 'cow';
+            if ($hasOptionA) {
+                // Parse Cow Milk
+                $rawCowQty = isset($colMap['cow_qty']) ? trim((string)($row[$colMap['cow_qty']] ?? '')) : '';
+                $cowQty = $rawCowQty !== '' ? (float)str_replace(',', '.', $rawCowQty) : 0.0;
+                $rawCowRate = isset($colMap['cow_rate']) ? trim((string)($row[$colMap['cow_rate']] ?? '')) : '';
+                $cowRate = ($rawCowRate !== '' && (float)str_replace(',', '.', $rawCowRate) > 0) ? (float)str_replace(',', '.', $rawCowRate) : null;
+
+                if ($cowQty > 0 && $cowProd) {
+                    $subsList[] = [
+                        'product_id' => (int)$cowProd['id'],
+                        'quantity' => round($cowQty, 2),
+                        'custom_rate' => $cowRate,
+                        'shift' => 'both',
+                        'is_active' => true
+                    ];
+                }
+
+                // Parse Buffalo Milk
+                $rawBufQty = isset($colMap['buffalo_qty']) ? trim((string)($row[$colMap['buffalo_qty']] ?? '')) : '';
+                $bufQty = $rawBufQty !== '' ? (float)str_replace(',', '.', $rawBufQty) : 0.0;
+                $rawBufRate = isset($colMap['buffalo_rate']) ? trim((string)($row[$colMap['buffalo_rate']] ?? '')) : '';
+                $bufRate = ($rawBufRate !== '' && (float)str_replace(',', '.', $rawBufRate) > 0) ? (float)str_replace(',', '.', $rawBufRate) : null;
+
+                if ($bufQty > 0 && $bufProd) {
+                    $subsList[] = [
+                        'product_id' => (int)$bufProd['id'],
+                        'quantity' => round($bufQty, 2),
+                        'custom_rate' => $bufRate,
+                        'shift' => 'both',
+                        'is_active' => true
+                    ];
+                }
             }
 
-            // Parse Quantity
-            $rawQty = isset($colMap['default_quantity']) ? (float)str_replace(',', '.', trim((string)($row[$colMap['default_quantity']] ?? '1.0'))) : 1.0;
-            $defaultQty = $rawQty > 0 ? round($rawQty, 2) : 1.00;
+            // Fallback if no subscriptions from Option A columns
+            if (empty($subsList)) {
+                $rawMilk = isset($colMap['milk_types']) ? strtolower(trim((string)($row[$colMap['milk_types']] ?? ''))) : 'cow';
+                $hasCow = str_contains($rawMilk, 'cow');
+                $hasBuffalo = str_contains($rawMilk, 'buffalo');
+                $isBoth = str_contains($rawMilk, 'both') || ($hasCow && $hasBuffalo);
 
-            // Parse Rate
-            $rawRate = isset($colMap['rate_per_unit']) ? (float)str_replace(',', '.', trim((string)($row[$colMap['rate_per_unit']] ?? '60.0'))) : 60.0;
-            $ratePerUnit = $rawRate > 0 ? round($rawRate, 2) : 60.00;
+                $rawQty = isset($colMap['default_quantity']) ? (float)str_replace(',', '.', trim((string)($row[$colMap['default_quantity']] ?? '1.0'))) : 1.0;
+                $defaultQty = $rawQty > 0 ? round($rawQty, 2) : 1.00;
+
+                $rawRate = isset($colMap['rate_per_unit']) ? (float)str_replace(',', '.', trim((string)($row[$colMap['rate_per_unit']] ?? ''))) : null;
+                $ratePerUnit = ($rawRate !== null && $rawRate > 0) ? round($rawRate, 2) : null;
+
+                if ($isBoth && $cowProd && $bufProd) {
+                    $half = round($defaultQty / 2, 2);
+                    if ($half <= 0) $half = 1.0;
+                    $subsList[] = ['product_id' => (int)$cowProd['id'], 'quantity' => $half, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
+                    $subsList[] = ['product_id' => (int)$bufProd['id'], 'quantity' => round($defaultQty - $half, 2) ?: $half, 'custom_rate' => null, 'shift' => 'both', 'is_active' => true];
+                } elseif ($hasBuffalo && $bufProd) {
+                    $subsList[] = ['product_id' => (int)$bufProd['id'], 'quantity' => $defaultQty, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
+                } elseif ($cowProd) {
+                    $subsList[] = ['product_id' => (int)$cowProd['id'], 'quantity' => $defaultQty, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
+                }
+            }
+
+            // Determine milk_types string
+            $activeCodes = [];
+            foreach ($subsList as $s) {
+                if ($cowProd && $s['product_id'] === (int)$cowProd['id']) $activeCodes[] = 'cow';
+                if ($bufProd && $s['product_id'] === (int)$bufProd['id']) $activeCodes[] = 'buffalo';
+            }
+            $milkTypes = !empty($activeCodes) ? implode(',', array_unique($activeCodes)) : 'cow';
 
             // Parse Status
             $rawStatus = isset($colMap['status']) ? strtolower(trim((string)($row[$colMap['status']] ?? 'active'))) : 'active';
@@ -792,12 +875,7 @@ final class CustomerController
                          WHERE id = ? AND tenant_id = ?",
                         [$name, $address, $routeName, $milkTypes, $status, (int)$existing['id'], $tenantId]
                     );
-                    $this->productService->syncSubscriptionsFromLegacyCustomer($tenantId, [
-                        'id' => (int)$existing['id'],
-                        'milk_types' => $milkTypes,
-                        'default_quantity' => $defaultQty,
-                        'rate_per_unit' => $ratePerUnit
-                    ]);
+                    $this->productService->saveCustomerSubscriptions($tenantId, (int)$existing['id'], $subsList);
                     $updatedCount++;
                 } else {
                     $skippedCount++;
@@ -819,12 +897,7 @@ final class CustomerController
                     [$tenantId, $name, $phone, $address, $routeName, $milkTypes, $status]
                 );
                 $newCustId = (int)$this->db->lastInsertId();
-                $this->productService->syncSubscriptionsFromLegacyCustomer($tenantId, [
-                    'id' => $newCustId,
-                    'milk_types' => $milkTypes,
-                    'default_quantity' => $defaultQty,
-                    'rate_per_unit' => $ratePerUnit
-                ]);
+                $this->productService->saveCustomerSubscriptions($tenantId, $newCustId, $subsList);
                 $importedCount++;
             }
         }

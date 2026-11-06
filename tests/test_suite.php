@@ -341,20 +341,25 @@ runTest("Delivery Calendar Matrix & Milk Type on Invoices", function() use ($db,
 
 // TEST 9: Customer CSV Import, Export, and Sample Template
 runTest("Customer CSV Import, Export, and Sample Template", function() use ($db) {
-    // 1. Verify Sample CSV generation
+    $prodSvc = new \App\Services\ProductService();
+    $prodSvc->ensureDefaultProducts(1);
+    $cowProd = $db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = 1 AND code = 'cow'");
+    $bufProd = $db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = 1 AND code = 'buffalo'");
+
+    // 1. Verify Sample CSV generation (Option A: Product-specific columns)
     $sampleFile = tempnam(sys_get_temp_dir(), "sample_csv_");
     $fp = fopen($sampleFile, 'w');
-    fputcsv($fp, ['Name', 'Phone', 'Address', 'Route', 'Milk Type', 'Default Quantity', 'Rate Per Unit', 'Status'], ',', '"', "\\");
-    fputcsv($fp, ['Import Test 1', '9666611111', 'Flat 1', 'Route A', 'cow', '1.5', '60.0', 'active'], ',', '"', "\\");
-    fputcsv($fp, ['Import Test 2', '9666622222', 'Flat 2', 'Route B', 'buffalo', '2.0', '70.0', 'active'], ',', '"', "\\");
-    fputcsv($fp, ['Import Test 3', '9666633333', 'Flat 3', 'Route A', 'cow,buffalo', '2.5', '65.0', 'active'], ',', '"', "\\");
+    fputcsv($fp, ['Name', 'Phone', 'Address', 'Route', 'Cow Qty (L)', 'Cow Rate', 'Buffalo Qty (L)', 'Buffalo Rate', 'Status'], ',', '"', "\\");
+    fputcsv($fp, ['Import Test 1', '9666611111', 'Flat 1', 'Route A', '1.5', '65.0', '', '', 'active'], ',', '"', "\\");
+    fputcsv($fp, ['Import Test 2', '9666622222', 'Flat 2', 'Route B', '', '', '2.0', '75.0', 'active'], ',', '"', "\\");
+    fputcsv($fp, ['Import Test 3', '9666633333', 'Flat 3', 'Route A', '1.0', '60.0', '2.5', '80.0', 'active'], ',', '"', "\\");
     fclose($fp);
 
-    // 2. Test manual CSV parsing & ingestion logic
+    // 2. Test CSV parsing & Option A ingestion logic
     $handle = fopen($sampleFile, 'r');
     $header = fgetcsv($handle, null, ',', '"', "\\");
-    if (!in_array('Name', $header) || !in_array('Phone', $header) || !in_array('Milk Type', $header)) {
-        throw new \Exception("Sample CSV missing critical headers");
+    if (!in_array('Name', $header) || !in_array('Phone', $header) || !in_array('Cow Qty (L)', $header) || !in_array('Buffalo Qty (L)', $header)) {
+        throw new \Exception("Sample CSV missing Option A product headers");
     }
 
     $imported = 0;
@@ -363,24 +368,29 @@ runTest("Customer CSV Import, Export, and Sample Template", function() use ($db)
         $phone = $row[1];
         $addr = $row[2];
         $route = $row[3];
-        $milk = $row[4];
-        $qty = (float)$row[5];
-        $rate = (float)$row[6];
-        $status = $row[7];
+        $cowQty = $row[4] !== '' ? (float)$row[4] : 0.0;
+        $cowRate = $row[5] !== '' ? (float)$row[5] : null;
+        $bufQty = $row[6] !== '' ? (float)$row[6] : 0.0;
+        $bufRate = $row[7] !== '' ? (float)$row[7] : null;
+        $status = $row[8];
+
+        $subs = [];
+        if ($cowQty > 0) {
+            $subs[] = ['product_id' => (int)$cowProd['id'], 'quantity' => $cowQty, 'custom_rate' => $cowRate, 'shift' => 'both', 'is_active' => true];
+        }
+        if ($bufQty > 0) {
+            $subs[] = ['product_id' => (int)$bufProd['id'], 'quantity' => $bufQty, 'custom_rate' => $bufRate, 'shift' => 'both', 'is_active' => true];
+        }
+
+        $milkTypes = count($subs) === 2 ? 'cow,buffalo' : ($cowQty > 0 ? 'cow' : 'buffalo');
 
         $db->execute(
             "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status)
              VALUES (1, ?, ?, ?, ?, ?, ?)",
-            [$name, $phone, $addr, $route, $milk, $status]
+            [$name, $phone, $addr, $route, $milkTypes, $status]
         );
         $newId = (int)$db->lastInsertId();
-        $prodSvc = new \App\Services\ProductService();
-        $prodSvc->syncSubscriptionsFromLegacyCustomer(1, [
-            'id' => $newId,
-            'milk_types' => $milk,
-            'default_quantity' => $qty,
-            'rate_per_unit' => $rate,
-        ]);
+        $prodSvc->saveCustomerSubscriptions(1, $newId, $subs);
         $imported++;
     }
     fclose($handle);
@@ -392,22 +402,22 @@ runTest("Customer CSV Import, Export, and Sample Template", function() use ($db)
 
     // Verify imported data in DB
     $c1 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666611111'");
-    $s1 = $db->fetchOne("SELECT default_quantity FROM customer_subscriptions WHERE customer_id = ?", [$c1['id']]);
-    if (!$c1 || $c1['milk_types'] !== 'cow' || (float)$s1['default_quantity'] !== 1.5) {
+    $s1 = $db->fetchOne("SELECT default_quantity, custom_rate FROM customer_subscriptions WHERE customer_id = ? AND product_id = ?", [$c1['id'], $cowProd['id']]);
+    if (!$c1 || $c1['milk_types'] !== 'cow' || (float)$s1['default_quantity'] !== 1.5 || (float)$s1['custom_rate'] !== 65.0) {
         throw new \Exception("Imported customer 1 mismatch");
     }
 
     $c2 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666622222'");
-    $s2 = $db->fetchOne("SELECT default_quantity FROM customer_subscriptions WHERE customer_id = ?", [$c2['id']]);
-    if (!$c2 || $c2['milk_types'] !== 'buffalo' || (float)$s2['default_quantity'] !== 2.0) {
+    $s2 = $db->fetchOne("SELECT default_quantity, custom_rate FROM customer_subscriptions WHERE customer_id = ? AND product_id = ?", [$c2['id'], $bufProd['id']]);
+    if (!$c2 || $c2['milk_types'] !== 'buffalo' || (float)$s2['default_quantity'] !== 2.0 || (float)$s2['custom_rate'] !== 75.0) {
         throw new \Exception("Imported customer 2 mismatch");
     }
 
     $c3 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666633333'");
-    $s3 = $db->fetchAll("SELECT default_quantity FROM customer_subscriptions WHERE customer_id = ?", [$c3['id']]);
-    $sum3 = array_sum(array_column($s3, 'default_quantity'));
-    if (!$c3 || $c3['milk_types'] !== 'cow,buffalo' || (float)$sum3 !== 2.5) {
-        throw new \Exception("Imported customer 3 mismatch");
+    $s3Cow = $db->fetchOne("SELECT default_quantity, custom_rate FROM customer_subscriptions WHERE customer_id = ? AND product_id = ?", [$c3['id'], $cowProd['id']]);
+    $s3Buf = $db->fetchOne("SELECT default_quantity, custom_rate FROM customer_subscriptions WHERE customer_id = ? AND product_id = ?", [$c3['id'], $bufProd['id']]);
+    if (!$c3 || $c3['milk_types'] !== 'cow,buffalo' || (float)$s3Cow['default_quantity'] !== 1.0 || (float)$s3Cow['custom_rate'] !== 60.0 || (float)$s3Buf['default_quantity'] !== 2.5 || (float)$s3Buf['custom_rate'] !== 80.0) {
+        throw new \Exception("Imported customer 3 mismatch (both milks)");
     }
 
     // 3. Test Export query

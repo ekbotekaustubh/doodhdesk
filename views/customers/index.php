@@ -284,10 +284,11 @@
             <div class="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
                 <div class="font-bold text-slate-700 text-[11px]">Supported CSV Columns:</div>
                 <div class="font-mono text-[10px] text-slate-600">
-                    Name, Phone, Address, Route, Milk Type, Default Quantity, Rate Per Unit, Status
+                    Name, Phone, Address, Route, Cow Qty (L), Cow Rate, Buffalo Qty (L), Buffalo Rate, Status
                 </div>
                 <div class="text-[10px] text-slate-500 pt-1">
-                    • <strong>Milk Type:</strong> <code class="font-mono">cow</code>, <code class="font-mono">buffalo</code>, or <code class="font-mono">cow,buffalo</code><br>
+                    • <strong>Quantities:</strong> Fill Cow Qty / Buffalo Qty for milks taken (leave blank if none).<br>
+                    • <strong>Rates:</strong> Leave blank to automatically use your default product catalog rate.<br>
                     • Active quota: <strong><?= $quota['remaining_slots'] ?> remaining slots</strong> on your plan.
                 </div>
             </div>
