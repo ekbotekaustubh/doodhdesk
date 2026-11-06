@@ -3,46 +3,31 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\ApiClient;
 use App\Core\Auth;
-use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
-use App\Services\QuotaService;
 
 final class SuperAdminController
 {
-    private Database $db;
-    private QuotaService $quotaService;
-
-    public function __construct()
-    {
-        $this->db = Database::getInstance();
-        $this->quotaService = new QuotaService();
-    }
-
     public function index(Request $request): void
     {
-        $tenants = $this->db->fetchAll(
-            "SELECT t.*, 
-                    ts.purchased_blocks, ts.max_customers_allowed, ts.amount_paid, ts.payment_status,
-                    (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id AND c.status = 'active') AS active_customers,
-                    (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS total_customers
-             FROM tenants t
-             LEFT JOIN tenant_subscriptions ts ON ts.tenant_id = t.id
-             ORDER BY t.id DESC"
-        );
+        // 1. Fetch tenants roster via REST API
+        $tenantsRes = ApiClient::get('/api/admin/tenants');
+        $tenants = $tenantsRes['data'] ?? [];
 
-        $systemSettings = $this->quotaService->getSystemSettings();
+        // 2. Fetch global system settings via REST API
+        $settingsRes = ApiClient::get('/api/admin/settings');
+        $systemSettings = $settingsRes['data'] ?? [];
 
-        // Platform KPIs
-        $totalTenants = count($tenants);
-        $totalActiveCustomers = 0;
-        $platformRevenue = 0.0;
-        foreach ($tenants as $t) {
-            $totalActiveCustomers += (int)$t['active_customers'];
-            $platformRevenue += (float)($t['amount_paid'] ?? 0.0);
-        }
+        // 3. Fetch aggregated stats via REST API
+        $statsRes = ApiClient::get('/api/admin/stats');
+        $stats = $statsRes['data'] ?? [];
+
+        $totalTenants = $stats['total_tenants'] ?? count($tenants);
+        $totalActiveCustomers = $stats['total_customers'] ?? 0;
+        $platformRevenue = (float)($stats['total_platform_revenue'] ?? 0.0);
 
         View::render('superadmin/index', [
             'admin' => Auth::admin(),
@@ -58,41 +43,38 @@ final class SuperAdminController
 
     public function updateSettings(Request $request): void
     {
-        $freeLimit = (int)$request->post('free_customer_limit', 5);
-        $unitSize = (int)$request->post('paid_tier_unit_size', 100);
-        $unitPrice = (float)$request->post('paid_tier_unit_price', 200.0);
-        $currencySymbol = trim((string)$request->post('currency_symbol', '₹'));
-        $platformName = trim((string)$request->post('platform_name', 'DoodhDesk SaaS'));
-
-        $settings = [
-            'free_customer_limit' => (string)$freeLimit,
-            'paid_tier_unit_size' => (string)$unitSize,
-            'paid_tier_unit_price' => (string)$unitPrice,
-            'currency_symbol' => $currencySymbol,
-            'platform_name' => $platformName,
+        $payload = [
+            'free_customer_limit' => (int)$request->post('free_customer_limit', 5),
+            'paid_tier_unit_size' => (int)$request->post('paid_tier_unit_size', 100),
+            'paid_tier_unit_price' => (float)$request->post('paid_tier_unit_price', 200.0),
+            'currency_symbol' => trim((string)$request->post('currency_symbol', '₹')),
+            'platform_name' => trim((string)$request->post('platform_name', 'DoodhDesk SaaS')),
         ];
 
-        $stmt = $this->db->getPdo()->prepare(
-            "INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)"
-        );
+        // Update settings via REST API
+        $res = ApiClient::put('/api/admin/settings', $payload);
 
-        foreach ($settings as $k => $v) {
-            $stmt->execute([$k, $v]);
+        if ($res['success']) {
+            Auth::flash('success', 'Global SaaS tier parameters updated successfully.');
+        } else {
+            Auth::flash('error', $res['error'] ?? 'Failed to update system settings.');
         }
 
-        Auth::flash('success', 'Global SaaS tier parameters updated successfully.');
         Response::redirect(url('/admin'));
     }
 
     public function toggleTenantStatus(Request $request, array $params): void
     {
         $tenantId = (int)($params['id'] ?? 0);
-        $tenant = $this->db->fetchOne("SELECT status FROM tenants WHERE id = ?", [$tenantId]);
 
-        if ($tenant) {
-            $newStatus = $tenant['status'] === 'active' ? 'suspended' : 'active';
-            $this->db->execute("UPDATE tenants SET status = ? WHERE id = ?", [$newStatus, $tenantId]);
+        // Toggle tenant status via REST API
+        $res = ApiClient::post("/api/admin/tenants/{$tenantId}/toggle-status");
+
+        if ($res['success']) {
+            $newStatus = $res['data']['status'] ?? 'updated';
             Auth::flash('success', "Tenant status updated to {$newStatus}.");
+        } else {
+            Auth::flash('error', $res['error'] ?? 'Failed to update tenant status.');
         }
 
         Response::redirect(url('/admin'));
@@ -103,22 +85,17 @@ final class SuperAdminController
         $tenantId = (int)($params['id'] ?? 0);
         $blocks = (int)$request->post('purchased_blocks', 0);
 
-        $sys = $this->quotaService->getSystemSettings();
-        $freeLimit = (int)$sys['free_customer_limit'];
-        $unitSize = (int)$sys['paid_tier_unit_size'];
-        $unitPrice = (float)$sys['paid_tier_unit_price'];
+        // Adjust quota via REST API
+        $res = ApiClient::post("/api/admin/tenants/{$tenantId}/quota", [
+            'purchased_blocks' => $blocks,
+        ]);
 
-        $newMax = $freeLimit + ($blocks * $unitSize);
-        $status = $blocks > 0 ? 'active' : 'free';
+        if ($res['success']) {
+            Auth::flash('success', "Customer capacity quota override applied for tenant #{$tenantId}.");
+        } else {
+            Auth::flash('error', $res['error'] ?? 'Failed to adjust customer quota.');
+        }
 
-        $this->db->execute(
-            "UPDATE tenant_subscriptions 
-             SET purchased_blocks = ?, max_customers_allowed = ?, payment_status = ?
-             WHERE tenant_id = ?",
-            [$blocks, $newMax, $status, $tenantId]
-        );
-
-        Auth::flash('success', "Tenant quota adjusted to {$newMax} customers ({$blocks} paid blocks).");
         Response::redirect(url('/admin'));
     }
 }

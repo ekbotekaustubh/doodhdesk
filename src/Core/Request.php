@@ -33,6 +33,28 @@ final class Request
         }
     }
 
+    public static function createInternal(string $method, string $path, array $data = [], ?string $bearerToken = null): self
+    {
+        $req = new self();
+        $req->method = strtoupper($method);
+        $req->path = '/' . trim($path, '/');
+        $req->uri = $path;
+        if ($req->method === 'GET') {
+            $req->queryParams = $data;
+            $req->bodyParams = [];
+            $req->jsonBody = null;
+        } else {
+            $req->queryParams = [];
+            $req->bodyParams = $data;
+            $req->jsonBody = $data;
+        }
+        if ($bearerToken !== null) {
+            $req->headers['authorization'] = 'Bearer ' . $bearerToken;
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $bearerToken;
+        }
+        return $req;
+    }
+
     private function collectHeaders(): array
     {
         $headers = [];

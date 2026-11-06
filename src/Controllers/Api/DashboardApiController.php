@@ -47,6 +47,21 @@ final class DashboardApiController extends ApiBaseController
             [$tenantId, $currentMonth, $currentYear]
         );
 
+        $unpaidInvoicesCount = (int)$this->db->fetchValue(
+            "SELECT COUNT(*) FROM invoices WHERE tenant_id = ? AND payment_status IN ('unpaid', 'partial')",
+            [$tenantId]
+        );
+
+        $recentDeliveries = $this->db->fetchAll(
+            "SELECT dd.*, c.name AS customer_name, c.route_name
+             FROM daily_deliveries dd
+             JOIN customers c ON c.id = dd.customer_id
+             WHERE dd.tenant_id = ?
+             ORDER BY dd.delivery_date DESC, dd.updated_at DESC
+             LIMIT 8",
+            [$tenantId]
+        );
+
         $this->jsonSuccess([
             'date' => $today,
             'shifts' => [
@@ -61,7 +76,10 @@ final class DashboardApiController extends ApiBaseController
                 'total_billed' => (float)($invoiceStats['total_billed'] ?? 0.0),
                 'total_collected' => round($paymentsThisMonth, 2),
                 'pending_balance' => max(0.0, round(((float)($invoiceStats['total_billed'] ?? 0.0)) - $paymentsThisMonth, 2)),
-            ]
+                'unpaid_invoices_count' => $unpaidInvoicesCount,
+            ],
+            'unpaid_invoices_count' => $unpaidInvoicesCount,
+            'recent_deliveries' => $recentDeliveries,
         ]);
     }
 }

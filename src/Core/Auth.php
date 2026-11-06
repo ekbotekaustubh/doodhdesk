@@ -258,7 +258,7 @@ final class Auth
                 'code' => 'UNAUTHENTICATED'
             ], 401);
         }
-        if (self::tenant()['status'] === 'suspended') {
+        if ((self::tenant()['status'] ?? 'active') === 'suspended') {
             Response::json([
                 'success' => false,
                 'error' => 'Account suspended. Please contact platform administration.',

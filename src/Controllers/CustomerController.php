@@ -3,104 +3,47 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\ApiClient;
 use App\Core\Auth;
-use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
-use App\Services\ProductService;
-use App\Services\QuotaService;
 
 final class CustomerController
 {
-    private Database $db;
-    private QuotaService $quotaService;
-    private ProductService $productService;
-
-    public function __construct()
-    {
-        $this->db = Database::getInstance();
-        $this->quotaService = new QuotaService();
-        $this->productService = new ProductService();
-    }
-
     public function index(Request $request): void
     {
-        $tenantId = Auth::tenantId();
-        $this->productService->ensureDefaultProducts($tenantId);
-
         $search = trim((string)$request->get('q', ''));
         $route = trim((string)$request->get('route', ''));
         $status = trim((string)$request->get('status', ''));
         $milkType = trim((string)$request->get('milk_type', ''));
 
-        $sql = "SELECT c.*,
-                    (SELECT COUNT(*) FROM customer_leaves cl WHERE cl.customer_id = c.id AND CURRENT_DATE BETWEEN cl.start_date AND cl.end_date) AS is_currently_on_leave
-                FROM customers c
-                WHERE c.tenant_id = ?";
-        $params = [$tenantId];
+        // 1. Fetch customer list via REST API
+        $res = ApiClient::get('/api/customers', [
+            'q' => $search,
+            'route' => $route,
+            'status' => $status,
+            'milk_type' => $milkType,
+        ]);
+        $customers = $res['data'] ?? [];
+        $quota = $res['meta']['quota'] ?? null;
 
-        if (!empty($search)) {
-            $sql .= " AND (c.name LIKE ? OR c.phone LIKE ? OR c.address LIKE ?)";
-            $params[] = "%{$search}%";
-            $params[] = "%{$search}%";
-            $params[] = "%{$search}%";
+        // 2. Fetch routes and products via REST API
+        $routesRes = ApiClient::get('/api/customers/routes');
+        $routes = $routesRes['data'] ?? [];
+
+        $productsRes = ApiClient::get('/api/products', ['active_only' => true]);
+        $products = $productsRes['data'] ?? [];
+
+        // Fallback quota if meta wasn't returned
+        if (!$quota) {
+            $subRes = ApiClient::get('/api/subscription');
+            $quota = $subRes['data']['quota'] ?? [];
         }
-
-        if (!empty($route)) {
-            $sql .= " AND c.route_name = ?";
-            $params[] = $route;
-        }
-
-        if (!empty($milkType)) {
-            if ($milkType === 'both') {
-                $sql .= " AND (c.milk_types LIKE '%cow%' AND c.milk_types LIKE '%buffalo%')";
-            } elseif ($milkType === 'cow') {
-                $sql .= " AND c.milk_types LIKE '%cow%'";
-            } elseif ($milkType === 'buffalo') {
-                $sql .= " AND c.milk_types LIKE '%buffalo%'";
-            }
-        }
-
-        if (!empty($status)) {
-            $sql .= " AND c.status = ?";
-            $params[] = $status;
-        }
-
-        $sql .= " ORDER BY c.status ASC, c.route_name ASC, c.name ASC";
-        $customers = $this->db->fetchAll($sql, $params);
-
-        // Attach active subscriptions for each customer
-        $allSubs = $this->db->fetchAll(
-            "SELECT cs.*, p.name AS product_name, p.code AS product_code, p.unit, p.default_rate AS product_default_rate
-             FROM customer_subscriptions cs
-             JOIN products p ON p.id = cs.product_id
-             WHERE cs.tenant_id = ? AND cs.is_active = 1
-             ORDER BY p.sort_order ASC, p.name ASC",
-            [$tenantId]
-        );
-        $subsByCust = [];
-        foreach ($allSubs as $s) {
-            $subsByCust[(int)$s['customer_id']][] = $s;
-        }
-
-        foreach ($customers as &$c) {
-            $c['subscriptions'] = $subsByCust[(int)$c['id']] ?? [];
-        }
-        unset($c);
-
-        // Fetch distinct routes
-        $routes = $this->db->fetchAll(
-            "SELECT DISTINCT route_name FROM customers WHERE tenant_id = ? AND route_name != '' ORDER BY route_name ASC",
-            [$tenantId]
-        );
-
-        $quota = $this->quotaService->getTenantQuota($tenantId);
-        $products = $this->productService->getTenantProducts($tenantId, true);
 
         View::render('customers/index', [
             'customers' => $customers,
-            'routes' => array_column($routes, 'route_name'),
+            'routes' => $routes,
             'products' => $products,
             'search' => $search,
             'selectedRoute' => $route,
@@ -116,171 +59,116 @@ final class CustomerController
 
     public function createView(Request $request): void
     {
-        $tenantId = Auth::tenantId();
-        $quota = $this->quotaService->getTenantQuota($tenantId);
+        $subRes = ApiClient::get('/api/subscription');
+        $quota = $subRes['data']['quota'] ?? [];
 
         // Guard: check quota before showing create form
-        if (!$quota['can_add']) {
+        if (!empty($quota) && empty($quota['can_add'])) {
             Auth::flash('paywall', 'limit_reached');
             Response::redirect(url('/customers'));
         }
 
-        $products = $this->productService->getTenantProducts($tenantId, true);
+        $prodRes = ApiClient::get('/api/products', ['active_only' => true]);
+        $products = $prodRes['data'] ?? [];
 
         View::render('customers/form', [
             'customer' => null,
             'quota' => $quota,
             'products' => $products,
             'subscriptions' => [],
-            'error' => Auth::flash('error')
+            'error' => Auth::flash('error'),
         ], 'main');
     }
 
     public function store(Request $request): void
     {
-        $tenantId = Auth::tenantId();
-
-        // Check Quota Guard
-        if (!$this->quotaService->canCreateCustomer($tenantId)) {
-            Auth::flash('error', 'Customer limit reached! Please upgrade your subscription tier to add more customers.');
-            Auth::flash('paywall', 'limit_reached');
-            Response::redirect(url('/customers'));
-        }
-
         $name = trim((string)$request->post('name', ''));
         $phone = trim((string)$request->post('phone', ''));
         $address = trim((string)$request->post('address', ''));
         $routeName = trim((string)$request->post('route_name', 'Main Route'));
         $status = (string)$request->post('status', 'active');
 
-        // Extract and process product subscriptions (Approach A)
+        // Parse subscriptions payload
         $rawSubs = $request->post('subscriptions');
         $subsList = [];
-        $totalSubQty = 0.0;
-        $primaryRate = 60.0;
-
         if (is_array($rawSubs)) {
             foreach ($rawSubs as $pId => $subData) {
-                if (!empty($subData['is_active']) && (float)($subData['quantity'] ?? 0) > 0) {
-                    $q = (float)$subData['quantity'];
-                    $r = isset($subData['custom_rate']) && $subData['custom_rate'] !== '' && (float)$subData['custom_rate'] > 0 ? (float)$subData['custom_rate'] : null;
-                    $sh = (string)($subData['shift'] ?? 'both');
-                    $subsList[] = [
-                        'product_id' => (int)$pId,
-                        'quantity' => $q,
-                        'custom_rate' => $r,
-                        'shift' => $sh,
-                        'is_active' => true,
-                    ];
-                    $totalSubQty += $q;
-                    if ($r !== null) {
-                        $primaryRate = $r;
+                if (is_array($subData) && !empty($subData['active'])) {
+                    $qty = (float)($subData['quantity'] ?? 0.0);
+                    $rate = isset($subData['custom_rate']) && $subData['custom_rate'] !== '' ? (float)$subData['custom_rate'] : null;
+                    $shift = (string)($subData['shift'] ?? 'both');
+                    if ($qty > 0) {
+                        $subsList[] = [
+                            'product_id' => (int)$pId,
+                            'quantity' => $qty,
+                            'custom_rate' => $rate,
+                            'shift' => $shift,
+                        ];
                     }
                 }
             }
         }
 
-        // If no explicit subscriptions array, build from multiselect milk types (backward-compatible)
+        // Fallback for simple legacy form submissions
         if (empty($subsList)) {
-            $rawMilkTypes = $request->post('milk_types', []);
-            $selectedTypes = [];
-            if (is_array($rawMilkTypes)) {
-                foreach ($rawMilkTypes as $t) {
-                    $t = trim(strtolower((string)$t));
-                    if (in_array($t, ['cow', 'buffalo'], true) && !in_array($t, $selectedTypes, true)) {
-                        $selectedTypes[] = $t;
-                    }
-                }
-            } elseif (is_string($rawMilkTypes) && trim($rawMilkTypes) !== '') {
-                $parts = explode(',', $rawMilkTypes);
-                foreach ($parts as $t) {
-                    $t = trim(strtolower($t));
-                    if (in_array($t, ['cow', 'buffalo'], true) && !in_array($t, $selectedTypes, true)) {
-                        $selectedTypes[] = $t;
-                    }
-                }
-            }
-
-            if (empty($selectedTypes)) {
-                Auth::flash('error', 'Please select at least one product / milk subscription with quantity.');
-                Response::redirect(url('/customers/create'));
-            }
-
-            $cowProd = $this->db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = ? AND code = 'cow'", [$tenantId]);
-            $bufProd = $this->db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = ? AND code = 'buffalo'", [$tenantId]);
-
-            if (in_array('cow', $selectedTypes, true) && in_array('buffalo', $selectedTypes, true) && $cowProd && $bufProd) {
-                $half = round($defaultQuantity / 2, 2);
-                if ($half <= 0) $half = 1.0;
-                $subsList[] = ['product_id' => (int)$cowProd['id'], 'quantity' => $half, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                $subsList[] = ['product_id' => (int)$bufProd['id'], 'quantity' => $half, 'custom_rate' => (float)$bufProd['default_rate'], 'shift' => 'both', 'is_active' => true];
-                $milkTypes = 'cow,buffalo';
-            } elseif (in_array('buffalo', $selectedTypes, true) && $bufProd) {
-                $subsList[] = ['product_id' => (int)$bufProd['id'], 'quantity' => $defaultQuantity, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                $milkTypes = 'buffalo';
-            } else {
-                $subsList[] = ['product_id' => (int)($cowProd['id'] ?? 1), 'quantity' => $defaultQuantity, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                $milkTypes = 'cow';
-            }
-            $finalQty = $defaultQuantity;
-        } else {
-            $finalQty = $totalSubQty;
-            $allActiveProds = $this->db->fetchAll("SELECT id, code FROM products WHERE tenant_id = ?", [$tenantId]);
-            $prodCodeMap = array_column($allActiveProds, 'code', 'id');
-            $activeCodes = [];
-            foreach ($subsList as $sl) {
-                if (isset($prodCodeMap[$sl['product_id']])) {
-                    $activeCodes[] = $prodCodeMap[$sl['product_id']];
-                }
-            }
-            $milkTypes = implode(',', array_unique($activeCodes));
+            $defaultQty = (float)$request->post('default_quantity', 1.0);
+            $customRate = $request->post('rate_per_unit') !== null && $request->post('rate_per_unit') !== '' ? (float)$request->post('rate_per_unit') : null;
+            $subsList[] = [
+                'product_id' => 1,
+                'quantity' => $defaultQty > 0 ? $defaultQty : 1.0,
+                'custom_rate' => $customRate,
+                'shift' => 'both',
+            ];
         }
 
-        if (empty($name) || empty($phone) || $finalQty <= 0) {
-            Auth::flash('error', 'Please fill in all required fields with valid values.');
-            Response::redirect(url('/customers/create'));
+        // 1. Execute customer creation via REST API
+        $res = ApiClient::post('/api/customers', [
+            'name' => $name,
+            'phone' => $phone,
+            'address' => $address,
+            'route_name' => $routeName,
+            'status' => $status,
+            'subscriptions' => $subsList,
+        ]);
+
+        if ($res['status'] === 201 || $res['success']) {
+            Auth::flash('success', "Customer '{$name}' created successfully.");
+            Response::redirect(url('/customers'));
         }
 
-        $this->db->execute(
-            "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [$tenantId, $name, $phone, $address, empty($routeName) ? 'Main Route' : $routeName, $milkTypes, $status]
-        );
+        if ($res['status'] === 403) {
+            Auth::flash('error', $res['error'] ?? 'Customer limit reached for your current subscription plan.');
+            Auth::flash('paywall', 'limit_reached');
+            Response::redirect(url('/customers'));
+        }
 
-        $customerId = (int)$this->db->lastInsertId();
-        $this->productService->saveCustomerSubscriptions($tenantId, $customerId, $subsList);
-
-        Auth::flash('success', "Customer '{$name}' added successfully.");
-        Response::redirect(url('/customers'));
+        Auth::flash('error', $res['error'] ?? 'Failed to create customer.');
+        Response::redirect(url('/customers/create'));
     }
 
     public function editView(Request $request, array $params): void
     {
-        $tenantId = Auth::tenantId();
         $id = (int)($params['id'] ?? 0);
 
-        $customer = $this->db->fetchOne("SELECT * FROM customers WHERE id = ? AND tenant_id = ?", [$id, $tenantId]);
-        if (!$customer) {
+        // Fetch customer details via REST API
+        $custRes = ApiClient::get("/api/customers/{$id}");
+        if (!$custRes['success'] || empty($custRes['data'])) {
             Auth::flash('error', 'Customer not found.');
             Response::redirect(url('/customers'));
         }
+        $customer = $custRes['data'];
 
-        $quota = $this->quotaService->getTenantQuota($tenantId);
-        $products = $this->productService->getTenantProducts($tenantId, true);
-        $subscriptions = $this->productService->getCustomerSubscriptions($tenantId, $id);
+        $subRes = ApiClient::get('/api/subscription');
+        $quota = $subRes['data']['quota'] ?? [];
 
-        // Fetch leaves
-        $leaves = $this->db->fetchAll(
-            "SELECT * FROM customer_leaves WHERE customer_id = ? AND tenant_id = ? ORDER BY start_date DESC",
-            [$id, $tenantId]
-        );
+        $prodRes = ApiClient::get('/api/products', ['active_only' => true]);
+        $products = $prodRes['data'] ?? [];
 
         View::render('customers/form', [
             'customer' => $customer,
             'quota' => $quota,
-            'leaves' => $leaves,
             'products' => $products,
-            'subscriptions' => $subscriptions,
+            'subscriptions' => $customer['subscriptions'] ?? [],
             'error' => Auth::flash('error'),
             'success' => Auth::flash('success'),
         ], 'main');
@@ -288,161 +176,96 @@ final class CustomerController
 
     public function update(Request $request, array $params): void
     {
-        $tenantId = Auth::tenantId();
         $id = (int)($params['id'] ?? 0);
-
-        $customer = $this->db->fetchOne("SELECT * FROM customers WHERE id = ? AND tenant_id = ?", [$id, $tenantId]);
-        if (!$customer) {
-            Auth::flash('error', 'Customer not found.');
-            Response::redirect(url('/customers'));
-        }
-
         $name = trim((string)$request->post('name', ''));
         $phone = trim((string)$request->post('phone', ''));
         $address = trim((string)$request->post('address', ''));
         $routeName = trim((string)$request->post('route_name', 'Main Route'));
         $status = (string)$request->post('status', 'active');
 
-        // Extract and process product subscriptions (Approach A)
+        // Parse subscriptions
         $rawSubs = $request->post('subscriptions');
         $subsList = [];
-        $totalSubQty = 0.0;
-        $primaryRate = 60.0;
-
         if (is_array($rawSubs)) {
             foreach ($rawSubs as $pId => $subData) {
-                if (!empty($subData['is_active']) && (float)($subData['quantity'] ?? 0) > 0) {
-                    $q = (float)$subData['quantity'];
-                    $r = isset($subData['custom_rate']) && $subData['custom_rate'] !== '' && (float)$subData['custom_rate'] > 0 ? (float)$subData['custom_rate'] : null;
-                    $sh = (string)($subData['shift'] ?? 'both');
-                    $subsList[] = [
-                        'product_id' => (int)$pId,
-                        'quantity' => $q,
-                        'custom_rate' => $r,
-                        'shift' => $sh,
-                        'is_active' => true,
-                    ];
-                    $totalSubQty += $q;
-                    if ($r !== null) {
-                        $primaryRate = $r;
+                if (is_array($subData) && !empty($subData['active'])) {
+                    $qty = (float)($subData['quantity'] ?? 0.0);
+                    $rate = isset($subData['custom_rate']) && $subData['custom_rate'] !== '' ? (float)$subData['custom_rate'] : null;
+                    $shift = (string)($subData['shift'] ?? 'both');
+                    if ($qty > 0) {
+                        $subsList[] = [
+                            'product_id' => (int)$pId,
+                            'quantity' => $qty,
+                            'custom_rate' => $rate,
+                            'shift' => $shift,
+                        ];
                     }
                 }
             }
         }
 
-        // If no explicit subscriptions array, build from multiselect milk types (backward-compatible)
-        if (empty($subsList)) {
-            $rawMilkTypes = $request->post('milk_types', []);
-            $selectedTypes = [];
-            if (is_array($rawMilkTypes)) {
-                foreach ($rawMilkTypes as $t) {
-                    $t = trim(strtolower((string)$t));
-                    if (in_array($t, ['cow', 'buffalo'], true) && !in_array($t, $selectedTypes, true)) {
-                        $selectedTypes[] = $t;
-                    }
-                }
-            } elseif (is_string($rawMilkTypes) && trim($rawMilkTypes) !== '') {
-                $parts = explode(',', $rawMilkTypes);
-                foreach ($parts as $t) {
-                    $t = trim(strtolower($t));
-                    if (in_array($t, ['cow', 'buffalo'], true) && !in_array($t, $selectedTypes, true)) {
-                        $selectedTypes[] = $t;
-                    }
-                }
-            }
+        // 1. Update customer via REST API
+        $res = ApiClient::put("/api/customers/{$id}", [
+            'name' => $name,
+            'phone' => $phone,
+            'address' => $address,
+            'route_name' => $routeName,
+            'status' => $status,
+            'subscriptions' => $subsList,
+        ]);
 
-            if (empty($selectedTypes)) {
-                Auth::flash('error', 'Please select at least one product subscription.');
-                Response::redirect(url("/customers/{$id}/edit"));
-            }
-
-            $cowProd = $this->db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = ? AND code = 'cow'", [$tenantId]);
-            $bufProd = $this->db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = ? AND code = 'buffalo'", [$tenantId]);
-
-            if (in_array('cow', $selectedTypes, true) && in_array('buffalo', $selectedTypes, true) && $cowProd && $bufProd) {
-                $half = round($defaultQuantity / 2, 2);
-                if ($half <= 0) $half = 1.0;
-                $subsList[] = ['product_id' => (int)$cowProd['id'], 'quantity' => $half, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                $subsList[] = ['product_id' => (int)$bufProd['id'], 'quantity' => $half, 'custom_rate' => (float)$bufProd['default_rate'], 'shift' => 'both', 'is_active' => true];
-                $milkTypes = 'cow,buffalo';
-            } elseif (in_array('buffalo', $selectedTypes, true) && $bufProd) {
-                $subsList[] = ['product_id' => (int)$bufProd['id'], 'quantity' => $defaultQuantity, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                $milkTypes = 'buffalo';
-            } else {
-                $subsList[] = ['product_id' => (int)($cowProd['id'] ?? 1), 'quantity' => $defaultQuantity, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                $milkTypes = 'cow';
-            }
-            $finalQty = $defaultQuantity;
-        } else {
-            $finalQty = $totalSubQty;
-            $allActiveProds = $this->db->fetchAll("SELECT id, code FROM products WHERE tenant_id = ?", [$tenantId]);
-            $prodCodeMap = array_column($allActiveProds, 'code', 'id');
-            $activeCodes = [];
-            foreach ($subsList as $sl) {
-                if (isset($prodCodeMap[$sl['product_id']])) {
-                    $activeCodes[] = $prodCodeMap[$sl['product_id']];
-                }
-            }
-            $milkTypes = implode(',', array_unique($activeCodes));
+        if ($res['success']) {
+            Auth::flash('success', "Customer '{$name}' updated successfully.");
+            Response::redirect(url('/customers'));
         }
 
-        // If changing status from inactive to active, check quota!
-        if ($customer['status'] === 'inactive' && $status === 'active') {
-            if (!$this->quotaService->canCreateCustomer($tenantId)) {
-                Auth::flash('error', 'Cannot activate customer: Quota limit reached for your current subscription plan.');
-                Auth::flash('paywall', 'limit_reached');
-                Response::redirect(url("/customers/{$id}/edit"));
-            }
+        if ($res['status'] === 403) {
+            Auth::flash('error', $res['error'] ?? 'Quota exceeded when attempting to activate customer.');
+            Auth::flash('paywall', 'limit_reached');
+            Response::redirect(url("/customers/{$id}/edit"));
         }
 
-        $this->db->execute(
-            "UPDATE customers 
-             SET name = ?, phone = ?, address = ?, route_name = ?, milk_types = ?, status = ?
-             WHERE id = ? AND tenant_id = ?",
-            [$name, $phone, $address, empty($routeName) ? 'Main Route' : $routeName, $milkTypes, $status, $id, $tenantId]
-        );
-
-        $this->productService->saveCustomerSubscriptions($tenantId, $id, $subsList);
-
-        Auth::flash('success', "Customer '{$name}' updated.");
-        Response::redirect(url('/customers'));
+        Auth::flash('error', $res['error'] ?? 'Failed to update customer.');
+        Response::redirect(url("/customers/{$id}/edit"));
     }
 
     public function addLeave(Request $request, array $params): void
     {
-        $tenantId = Auth::tenantId();
         $customerId = (int)($params['id'] ?? 0);
         $startDate = (string)$request->post('start_date');
         $endDate = (string)$request->post('end_date');
         $reason = trim((string)$request->post('reason', 'Vacation / Pause'));
 
-        if (empty($startDate) || empty($endDate) || $startDate > $endDate) {
-            Auth::flash('error', 'Please provide a valid leave date range.');
-            Response::redirect(url("/customers/{$customerId}/edit"));
+        // Schedule pause via REST API
+        $res = ApiClient::post("/api/customers/{$customerId}/leaves", [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'reason' => $reason,
+        ]);
+
+        if ($res['success']) {
+            Auth::flash('success', "Vacation schedule recorded! Deliveries between {$startDate} and {$endDate} will automatically pause.");
+        } else {
+            Auth::flash('error', $res['error'] ?? 'Please provide a valid leave date range.');
         }
 
-        $this->db->execute(
-            "INSERT INTO customer_leaves (tenant_id, customer_id, start_date, end_date, reason)
-             VALUES (?, ?, ?, ?, ?)",
-            [$tenantId, $customerId, $startDate, $endDate, $reason]
-        );
-
-        Auth::flash('success', "Vacation schedule recorded! Deliveries between {$startDate} and {$endDate} will automatically pause.");
         Response::redirect(url("/customers/{$customerId}/edit"));
     }
 
     public function deleteLeave(Request $request, array $params): void
     {
-        $tenantId = Auth::tenantId();
         $customerId = (int)($params['id'] ?? 0);
         $leaveId = (int)($params['leave_id'] ?? 0);
 
-        $this->db->execute(
-            "DELETE FROM customer_leaves WHERE id = ? AND customer_id = ? AND tenant_id = ?",
-            [$leaveId, $customerId, $tenantId]
-        );
+        // Cancel pause via REST API
+        $res = ApiClient::delete("/api/customers/{$customerId}/leaves/{$leaveId}");
 
-        Auth::flash('success', "Leave schedule removed.");
+        if ($res['success']) {
+            Auth::flash('success', 'Leave schedule removed.');
+        } else {
+            Auth::flash('error', $res['error'] ?? 'Failed to remove leave schedule.');
+        }
+
         Response::redirect(url("/customers/{$customerId}/edit"));
     }
 
@@ -459,74 +282,16 @@ final class CustomerController
         header('Expires: 0');
 
         $out = fopen('php://output', 'w');
-        // UTF-8 BOM for Microsoft Excel compatibility
-        fwrite($out, "\xEF\xBB\xBF");
+        fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM
 
-        // Headers: Option A product-specific columns
         fputcsv($out, [
-            'Name',
-            'Phone',
-            'Address',
-            'Route',
-            'Cow Qty (L)',
-            'Cow Rate',
-            'Buffalo Qty (L)',
-            'Buffalo Rate',
-            'Status'
+            'Name', 'Phone', 'Address', 'Route',
+            'Cow Qty (L)', 'Cow Rate', 'Buffalo Qty (L)', 'Buffalo Rate', 'Status'
         ], ',', '"', "\\");
 
-        // Sample rows demonstrating different options
-        // 1. Aarav Sharma: Cow milk only (2.0L @ ₹65.00)
-        fputcsv($out, [
-            'Aarav Sharma',
-            '9822011111',
-            'Flat 101, Gokul Heights, Station Road',
-            'Green Valley Route',
-            '2.00',
-            '65.00',
-            '',
-            '',
-            'active'
-        ], ',', '"', "\\");
-
-        // 2. Priya Verma: Buffalo milk only (1.5L @ ₹75.00)
-        fputcsv($out, [
-            'Priya Verma',
-            '9822022222',
-            'B-204, Sunrise Residency, Near Temple',
-            'Green Valley Route',
-            '',
-            '',
-            '1.50',
-            '75.00',
-            'active'
-        ], ',', '"', "\\");
-
-        // 3. Rajesh Gupta: Both milks (1.0L Cow @ ₹65.00, 2.0L Buffalo @ ₹75.00)
-        fputcsv($out, [
-            'Rajesh Gupta',
-            '9822033333',
-            'House #14, Civil Lines, Main Market',
-            'North City Route',
-            '1.00',
-            '65.00',
-            '2.00',
-            '75.00',
-            'active'
-        ], ',', '"', "\\");
-
-        // 4. Sneha Kulkarni: Default catalog rate (leaving Rate empty automatically uses product catalog rate)
-        fputcsv($out, [
-            'Sneha Kulkarni',
-            '9822044444',
-            'Flat 302, Palm Grove Society',
-            'Green Valley Route',
-            '1.00',
-            '',
-            '',
-            '',
-            'active'
-        ], ',', '"', "\\");
+        fputcsv($out, ['Aarav Sharma', '9822011111', 'Flat 101, Gokul Heights', 'Green Valley Route', '2.00', '65.00', '', '', 'active'], ',', '"', "\\");
+        fputcsv($out, ['Priya Verma', '9822022222', 'B-204, Sunrise Residency', 'Green Valley Route', '', '', '1.50', '75.00', 'active'], ',', '"', "\\");
+        fputcsv($out, ['Rajesh Gupta', '9822033333', 'House #14, Civil Lines', 'North City Route', '1.00', '65.00', '2.00', '75.00', 'active'], ',', '"', "\\");
 
         fclose($out);
         exit;
@@ -534,44 +299,19 @@ final class CustomerController
 
     public function exportCsv(Request $request): void
     {
-        $tenantId = Auth::tenantId();
         $search = trim((string)$request->get('q', ''));
         $route = trim((string)$request->get('route', ''));
         $status = trim((string)$request->get('status', ''));
         $milkType = trim((string)$request->get('milk_type', ''));
 
-        $sql = "SELECT c.* FROM customers c WHERE c.tenant_id = ?";
-        $params = [$tenantId];
-
-        if (!empty($search)) {
-            $sql .= " AND (c.name LIKE ? OR c.phone LIKE ? OR c.address LIKE ?)";
-            $params[] = "%{$search}%";
-            $params[] = "%{$search}%";
-            $params[] = "%{$search}%";
-        }
-
-        if (!empty($route)) {
-            $sql .= " AND c.route_name = ?";
-            $params[] = $route;
-        }
-
-        if (!empty($milkType)) {
-            if ($milkType === 'both') {
-                $sql .= " AND (c.milk_types LIKE '%cow%' AND c.milk_types LIKE '%buffalo%')";
-            } elseif ($milkType === 'cow') {
-                $sql .= " AND c.milk_types LIKE '%cow%'";
-            } elseif ($milkType === 'buffalo') {
-                $sql .= " AND c.milk_types LIKE '%buffalo%'";
-            }
-        }
-
-        if (!empty($status)) {
-            $sql .= " AND c.status = ?";
-            $params[] = $status;
-        }
-
-        $sql .= " ORDER BY c.route_name ASC, c.name ASC";
-        $customers = $this->db->fetchAll($sql, $params);
+        // Fetch all matching customers via REST API
+        $res = ApiClient::get('/api/customers', [
+            'q' => $search,
+            'route' => $route,
+            'status' => $status,
+            'milk_type' => $milkType,
+        ]);
+        $customers = $res['data'] ?? [];
 
         while (ob_get_level() > 0) {
             ob_end_clean();
@@ -589,38 +329,21 @@ final class CustomerController
         fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM
 
         fputcsv($out, [
-            'ID',
-            'Name',
-            'Phone',
-            'Address',
-            'Route',
-            'Cow Qty (L)',
-            'Cow Rate',
-            'Buffalo Qty (L)',
-            'Buffalo Rate',
-            'Status',
-            'Created Date'
+            'ID', 'Name', 'Phone', 'Address', 'Route',
+            'Cow Qty (L)', 'Cow Rate', 'Buffalo Qty (L)', 'Buffalo Rate', 'Status', 'Created Date'
         ], ',', '"', "\\");
 
-        $subsRows = $this->db->fetchAll(
-            "SELECT cs.customer_id, p.code, cs.default_quantity, COALESCE(cs.custom_rate, p.default_rate) as effective_rate
-             FROM customer_subscriptions cs
-             JOIN products p ON p.id = cs.product_id
-             WHERE cs.tenant_id = ? AND cs.is_active = 1",
-            [$tenantId]
-        );
-        $subsByCust = [];
-        foreach ($subsRows as $sr) {
-            $subsByCust[(int)$sr['customer_id']][$sr['code']] = [
-                'qty' => (float)$sr['default_quantity'],
-                'rate' => (float)$sr['effective_rate']
-            ];
-        }
-
         foreach ($customers as $c) {
-            $cid = (int)$c['id'];
-            $cowSub = $subsByCust[$cid]['cow'] ?? null;
-            $bufSub = $subsByCust[$cid]['buffalo'] ?? null;
+            $subs = $c['subscriptions'] ?? [];
+            $cowSub = null;
+            $bufSub = null;
+            foreach ($subs as $s) {
+                if (($s['product_code'] ?? '') === 'cow') {
+                    $cowSub = $s;
+                } elseif (($s['product_code'] ?? '') === 'buffalo') {
+                    $bufSub = $s;
+                }
+            }
 
             fputcsv($out, [
                 $c['id'],
@@ -628,10 +351,10 @@ final class CustomerController
                 $c['phone'],
                 $c['address'] ?? '',
                 $c['route_name'] ?? 'Main Route',
-                $cowSub ? number_format($cowSub['qty'], 2, '.', '') : '',
-                $cowSub ? number_format($cowSub['rate'], 2, '.', '') : '',
-                $bufSub ? number_format($bufSub['qty'], 2, '.', '') : '',
-                $bufSub ? number_format($bufSub['rate'], 2, '.', '') : '',
+                $cowSub ? number_format((float)$cowSub['default_quantity'], 2, '.', '') : '',
+                $cowSub ? number_format((float)($cowSub['effective_rate'] ?? $cowSub['custom_rate'] ?? 0), 2, '.', '') : '',
+                $bufSub ? number_format((float)$bufSub['default_quantity'], 2, '.', '') : '',
+                $bufSub ? number_format((float)($bufSub['effective_rate'] ?? $bufSub['custom_rate'] ?? 0), 2, '.', '') : '',
                 $c['status'],
                 substr((string)($c['created_at'] ?? ''), 0, 10)
             ], ',', '"', "\\");
@@ -643,28 +366,18 @@ final class CustomerController
 
     public function importCsv(Request $request): void
     {
-        $tenantId = Auth::tenantId();
-
-        // Ensure default products exist for tenant
-        $this->productService->ensureDefaultProducts($tenantId);
-        $cowProd = $this->db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = ? AND code = 'cow'", [$tenantId]);
-        $bufProd = $this->db->fetchOne("SELECT id, default_rate FROM products WHERE tenant_id = ? AND code = 'buffalo'", [$tenantId]);
-
-        // 1. Verify file upload
         $file = $request->file('csv_file');
         if (!$file || empty($file['tmp_name']) || $file['error'] !== UPLOAD_ERR_OK) {
             Auth::flash('error', 'Please select a valid CSV file to upload.');
             Response::redirect(url('/customers'));
         }
 
-        $filename = (string)($file['name'] ?? '');
-        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-        if ($ext !== 'csv' && !in_array($file['type'] ?? '', ['text/csv', 'text/plain', 'application/vnd.ms-excel'])) {
-            Auth::flash('error', 'Invalid file format. Please upload a standard .csv file.');
-            Response::redirect(url('/customers'));
+        $prodRes = ApiClient::get('/api/products', ['active_only' => true]);
+        $products = $prodRes['data'] ?? [];
+        $prodMap = [];
+        foreach ($products as $p) {
+            $prodMap[$p['code']] = (int)$p['id'];
         }
-
-        $updateExisting = (bool)$request->post('update_existing', false);
 
         $handle = fopen($file['tmp_name'], 'r');
         if (!$handle) {
@@ -672,13 +385,12 @@ final class CustomerController
             Response::redirect(url('/customers'));
         }
 
-        // 2. Read and strip UTF-8 BOM if present
+        // Strip UTF-8 BOM
         $bomCheck = fread($handle, 3);
         if ($bomCheck !== "\xEF\xBB\xBF") {
             rewind($handle);
         }
 
-        // 3. Read Header Row
         $header = fgetcsv($handle, null, ',', '"', "\\");
         if (!$header || empty($header)) {
             fclose($handle);
@@ -686,244 +398,79 @@ final class CustomerController
             Response::redirect(url('/customers'));
         }
 
-        // Normalize header columns
+        // Map column indexes
         $colMap = [];
         foreach ($header as $idx => $rawCol) {
-            $col = strtolower(trim((string)$rawCol));
-            $clean = preg_replace('/[^a-z0-9]/', '', $col);
-
-            if (in_array($clean, ['name', 'customername', 'fullname', 'custname'], true)) {
-                $colMap['name'] = $idx;
-            } elseif (in_array($clean, ['phone', 'mobile', 'phonenumber', 'mobilenumber', 'contact', 'cell'], true)) {
-                $colMap['phone'] = $idx;
-            } elseif (in_array($clean, ['address', 'deliveryaddress', 'street', 'location'], true)) {
-                $colMap['address'] = $idx;
-            } elseif (in_array($clean, ['route', 'routename', 'area', 'sector'], true)) {
-                $colMap['route_name'] = $idx;
-            } elseif (in_array($clean, ['status', 'accountstatus', 'state'], true)) {
-                $colMap['status'] = $idx;
-            }
-            // Option A: Product-specific Cow columns
-            elseif (in_array($clean, ['cowqty', 'cowqtyl', 'cowquantity', 'cowquantityl', 'cowl', 'cowliters', 'cowmilk', 'cowmilkl', 'cowmilkqty'], true)) {
-                $colMap['cow_qty'] = $idx;
-            } elseif (in_array($clean, ['cowrate', 'cowprice', 'cowrateperunit', 'cowrateperl', 'cowunitrate'], true)) {
-                $colMap['cow_rate'] = $idx;
-            }
-            // Option A: Product-specific Buffalo columns
-            elseif (in_array($clean, ['buffaloqty', 'buffaloqtyl', 'buffaloquantity', 'buffaloquantityl', 'buffalol', 'buffaloliters', 'buffalomilk', 'buffalomilkl', 'buffalomilkqty'], true)) {
-                $colMap['buffalo_qty'] = $idx;
-            } elseif (in_array($clean, ['buffalorate', 'buffaloprice', 'buffalorateperunit', 'buffalorateperl', 'buffalounitrate'], true)) {
-                $colMap['buffalo_rate'] = $idx;
-            }
-            // Legacy generic columns
-            elseif (in_array($clean, ['milktype', 'milktypes', 'milk', 'type', 'types'], true)) {
-                $colMap['milk_types'] = $idx;
-            } elseif (in_array($clean, ['defaultquantity', 'quantity', 'qty', 'dailyquantity', 'liters', 'defaultquantityl'], true)) {
-                $colMap['default_quantity'] = $idx;
-            } elseif (in_array($clean, ['rateperunit', 'rate', 'price', 'rateperliter', 'unitrate'], true)) {
-                $colMap['rate_per_unit'] = $idx;
-            }
+            $clean = preg_replace('/[^a-z0-9]/', '', strtolower(trim((string)$rawCol)));
+            if (in_array($clean, ['name', 'customername', 'fullname'], true)) $colMap['name'] = $idx;
+            elseif (in_array($clean, ['phone', 'mobile', 'phonenumber'], true)) $colMap['phone'] = $idx;
+            elseif (in_array($clean, ['address', 'deliveryaddress'], true)) $colMap['address'] = $idx;
+            elseif (in_array($clean, ['route', 'routename'], true)) $colMap['route'] = $idx;
+            elseif (in_array($clean, ['cowqtyl', 'cowqty', 'cowmilkqty'], true)) $colMap['cow_qty'] = $idx;
+            elseif (in_array($clean, ['cowrate', 'cowrateperunit'], true)) $colMap['cow_rate'] = $idx;
+            elseif (in_array($clean, ['buffaloqtyl', 'buffaloqty', 'buffalomilkqty'], true)) $colMap['buf_qty'] = $idx;
+            elseif (in_array($clean, ['buffalorate', 'buffalorateperunit'], true)) $colMap['buf_rate'] = $idx;
+            elseif (in_array($clean, ['status'], true)) $colMap['status'] = $idx;
         }
 
-        if (!isset($colMap['name']) || !isset($colMap['phone'])) {
-            fclose($handle);
-            Auth::flash('error', 'Invalid CSV headers. The CSV file must contain at least "Name" and "Phone" columns.');
-            Response::redirect(url('/customers'));
-        }
-
-        // Quota check baseline
-        $quota = $this->quotaService->getTenantQuota($tenantId);
-        $maxAllowed = (int)$quota['max_allowed'];
-        $currentActiveCount = (int)$this->db->fetchValue(
-            "SELECT COUNT(*) FROM customers WHERE tenant_id = ? AND status = 'active'",
-            [$tenantId]
-        );
-
-        $rowNum = 1;
-        $importedCount = 0;
-        $updatedCount = 0;
-        $skippedCount = 0;
-        $skippedReasons = [];
+        $imported = 0;
+        $skipped = 0;
+        $quotaFull = false;
 
         while (($row = fgetcsv($handle, null, ',', '"', "\\")) !== false) {
-            $rowNum++;
+            if (empty(array_filter($row))) continue;
 
-            // Skip completely empty lines
-            if (empty(array_filter($row, fn($v) => trim((string)$v) !== ''))) {
+            $name = trim((string)($row[$colMap['name'] ?? 0] ?? ''));
+            $phone = preg_replace('/[^0-9]/', '', (string)($row[$colMap['phone'] ?? 1] ?? ''));
+            if (empty($name) || empty($phone)) {
+                $skipped++;
                 continue;
             }
 
-            $name = trim((string)($row[$colMap['name']] ?? ''));
-            $rawPhone = trim((string)($row[$colMap['phone']] ?? ''));
-            $phone = preg_replace('/[^\d+]/', '', $rawPhone);
+            $address = trim((string)($row[$colMap['address'] ?? -1] ?? ''));
+            $route = trim((string)($row[$colMap['route'] ?? -1] ?? 'Main Route'));
+            $status = strtolower(trim((string)($row[$colMap['status'] ?? -1] ?? 'active'))) === 'inactive' ? 'inactive' : 'active';
 
-            if (empty($name)) {
-                $skippedCount++;
-                $skippedReasons[] = "Row {$rowNum}: Customer name is empty.";
-                continue;
+            $subs = [];
+            $cowQty = isset($colMap['cow_qty']) ? (float)($row[$colMap['cow_qty']] ?? 0) : 0.0;
+            $cowRate = isset($colMap['cow_rate']) && $row[$colMap['cow_rate']] !== '' ? (float)$row[$colMap['cow_rate']] : null;
+            if ($cowQty > 0 && isset($prodMap['cow'])) {
+                $subs[] = ['product_id' => $prodMap['cow'], 'quantity' => $cowQty, 'custom_rate' => $cowRate, 'shift' => 'both'];
             }
 
-            if (empty($phone) || strlen($phone) < 7) {
-                $skippedCount++;
-                $skippedReasons[] = "Row {$rowNum} ('{$name}'): Invalid phone number '{$rawPhone}'.";
-                continue;
+            $bufQty = isset($colMap['buf_qty']) ? (float)($row[$colMap['buf_qty']] ?? 0) : 0.0;
+            $bufRate = isset($colMap['buf_rate']) && $row[$colMap['buf_rate']] !== '' ? (float)$row[$colMap['buf_rate']] : null;
+            if ($bufQty > 0 && isset($prodMap['buffalo'])) {
+                $subs[] = ['product_id' => $prodMap['buffalo'], 'quantity' => $bufQty, 'custom_rate' => $bufRate, 'shift' => 'both'];
             }
 
-            $address = isset($colMap['address']) ? trim((string)($row[$colMap['address']] ?? '')) : '';
-            $routeName = isset($colMap['route_name']) ? trim((string)($row[$colMap['route_name']] ?? '')) : '';
-            if (empty($routeName)) {
-                $routeName = 'Main Route';
-            }
+            // Create customer via REST API
+            $createRes = ApiClient::post('/api/customers', [
+                'name' => $name,
+                'phone' => $phone,
+                'address' => $address,
+                'route_name' => empty($route) ? 'Main Route' : $route,
+                'status' => $status,
+                'subscriptions' => $subs,
+            ]);
 
-            // Build subscription items (Option A with fallback)
-            $subsList = [];
-            $hasOptionA = isset($colMap['cow_qty']) || isset($colMap['buffalo_qty']);
-
-            if ($hasOptionA) {
-                // Parse Cow Milk
-                $rawCowQty = isset($colMap['cow_qty']) ? trim((string)($row[$colMap['cow_qty']] ?? '')) : '';
-                $cowQty = $rawCowQty !== '' ? (float)str_replace(',', '.', $rawCowQty) : 0.0;
-                $rawCowRate = isset($colMap['cow_rate']) ? trim((string)($row[$colMap['cow_rate']] ?? '')) : '';
-                $cowRate = ($rawCowRate !== '' && (float)str_replace(',', '.', $rawCowRate) > 0) ? (float)str_replace(',', '.', $rawCowRate) : null;
-
-                if ($cowQty > 0 && $cowProd) {
-                    $subsList[] = [
-                        'product_id' => (int)$cowProd['id'],
-                        'quantity' => round($cowQty, 2),
-                        'custom_rate' => $cowRate,
-                        'shift' => 'both',
-                        'is_active' => true
-                    ];
-                }
-
-                // Parse Buffalo Milk
-                $rawBufQty = isset($colMap['buffalo_qty']) ? trim((string)($row[$colMap['buffalo_qty']] ?? '')) : '';
-                $bufQty = $rawBufQty !== '' ? (float)str_replace(',', '.', $rawBufQty) : 0.0;
-                $rawBufRate = isset($colMap['buffalo_rate']) ? trim((string)($row[$colMap['buffalo_rate']] ?? '')) : '';
-                $bufRate = ($rawBufRate !== '' && (float)str_replace(',', '.', $rawBufRate) > 0) ? (float)str_replace(',', '.', $rawBufRate) : null;
-
-                if ($bufQty > 0 && $bufProd) {
-                    $subsList[] = [
-                        'product_id' => (int)$bufProd['id'],
-                        'quantity' => round($bufQty, 2),
-                        'custom_rate' => $bufRate,
-                        'shift' => 'both',
-                        'is_active' => true
-                    ];
-                }
-            }
-
-            // Fallback if no subscriptions from Option A columns
-            if (empty($subsList)) {
-                $rawMilk = isset($colMap['milk_types']) ? strtolower(trim((string)($row[$colMap['milk_types']] ?? ''))) : 'cow';
-                $hasCow = str_contains($rawMilk, 'cow');
-                $hasBuffalo = str_contains($rawMilk, 'buffalo');
-                $isBoth = str_contains($rawMilk, 'both') || ($hasCow && $hasBuffalo);
-
-                $rawQty = isset($colMap['default_quantity']) ? (float)str_replace(',', '.', trim((string)($row[$colMap['default_quantity']] ?? '1.0'))) : 1.0;
-                $defaultQty = $rawQty > 0 ? round($rawQty, 2) : 1.00;
-
-                $rawRate = isset($colMap['rate_per_unit']) ? (float)str_replace(',', '.', trim((string)($row[$colMap['rate_per_unit']] ?? ''))) : null;
-                $ratePerUnit = ($rawRate !== null && $rawRate > 0) ? round($rawRate, 2) : null;
-
-                if ($isBoth && $cowProd && $bufProd) {
-                    $half = round($defaultQty / 2, 2);
-                    if ($half <= 0) $half = 1.0;
-                    $subsList[] = ['product_id' => (int)$cowProd['id'], 'quantity' => $half, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                    $subsList[] = ['product_id' => (int)$bufProd['id'], 'quantity' => round($defaultQty - $half, 2) ?: $half, 'custom_rate' => null, 'shift' => 'both', 'is_active' => true];
-                } elseif ($hasBuffalo && $bufProd) {
-                    $subsList[] = ['product_id' => (int)$bufProd['id'], 'quantity' => $defaultQty, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                } elseif ($cowProd) {
-                    $subsList[] = ['product_id' => (int)$cowProd['id'], 'quantity' => $defaultQty, 'custom_rate' => $ratePerUnit, 'shift' => 'both', 'is_active' => true];
-                }
-            }
-
-            // Determine milk_types string
-            $activeCodes = [];
-            foreach ($subsList as $s) {
-                if ($cowProd && $s['product_id'] === (int)$cowProd['id']) $activeCodes[] = 'cow';
-                if ($bufProd && $s['product_id'] === (int)$bufProd['id']) $activeCodes[] = 'buffalo';
-            }
-            $milkTypes = !empty($activeCodes) ? implode(',', array_unique($activeCodes)) : 'cow';
-
-            // Parse Status
-            $rawStatus = isset($colMap['status']) ? strtolower(trim((string)($row[$colMap['status']] ?? 'active'))) : 'active';
-            $status = in_array($rawStatus, ['inactive', 'deactive', 'disabled', '0'], true) ? 'inactive' : 'active';
-
-            // Check existing customer by phone for this tenant
-            $existing = $this->db->fetchOne(
-                "SELECT id, name, status FROM customers WHERE tenant_id = ? AND phone = ?",
-                [$tenantId, $phone]
-            );
-
-            if ($existing) {
-                if ($updateExisting) {
-                    if ($existing['status'] === 'inactive' && $status === 'active') {
-                        if ($currentActiveCount >= $maxAllowed) {
-                            $skippedCount++;
-                            $skippedReasons[] = "Row {$rowNum} ('{$name}'): Cannot activate customer, active quota limit ({$maxAllowed}) reached.";
-                            continue;
-                        }
-                        $currentActiveCount++;
-                    } elseif ($existing['status'] === 'active' && $status === 'inactive') {
-                        $currentActiveCount = max(0, $currentActiveCount - 1);
-                    }
-
-                    $this->db->execute(
-                        "UPDATE customers 
-                         SET name = ?, address = ?, route_name = ?, milk_types = ?, status = ?
-                         WHERE id = ? AND tenant_id = ?",
-                        [$name, $address, $routeName, $milkTypes, $status, (int)$existing['id'], $tenantId]
-                    );
-                    $this->productService->saveCustomerSubscriptions($tenantId, (int)$existing['id'], $subsList);
-                    $updatedCount++;
-                } else {
-                    $skippedCount++;
-                    $skippedReasons[] = "Row {$rowNum} ('{$name}'): Phone {$phone} already exists for customer '{$existing['name']}'.";
-                }
+            if ($createRes['status'] === 201 || $createRes['success']) {
+                $imported++;
+            } elseif ($createRes['status'] === 403) {
+                $quotaFull = true;
+                $skipped++;
+                break;
             } else {
-                if ($status === 'active') {
-                    if ($currentActiveCount >= $maxAllowed) {
-                        $skippedCount++;
-                        $skippedReasons[] = "Row {$rowNum} ('{$name}'): Skipped because active customer limit ({$maxAllowed}) reached.";
-                        continue;
-                    }
-                    $currentActiveCount++;
-                }
-
-                $this->db->execute(
-                    "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [$tenantId, $name, $phone, $address, $routeName, $milkTypes, $status]
-                );
-                $newCustId = (int)$this->db->lastInsertId();
-                $this->productService->saveCustomerSubscriptions($tenantId, $newCustId, $subsList);
-                $importedCount++;
+                $skipped++;
             }
         }
-
         fclose($handle);
 
-        if ($importedCount > 0 || $updatedCount > 0) {
-            $msg = "Import completed: {$importedCount} new customer(s) added";
-            if ($updatedCount > 0) {
-                $msg .= ", {$updatedCount} updated";
-            }
-            if ($skippedCount > 0) {
-                $msg .= " ({$skippedCount} skipped)";
-            }
-            $msg .= ".";
-            Auth::flash('success', $msg);
+        if ($quotaFull) {
+            Auth::flash('error', "Quota reached! Successfully imported {$imported} customers before hitting plan capacity.");
+            Auth::flash('paywall', 'limit_reached');
         } else {
-            Auth::flash('error', "No customers imported. {$skippedCount} row(s) skipped.");
-        }
-
-        if (!empty($skippedReasons) && $skippedCount > 0) {
-            $preview = array_slice($skippedReasons, 0, 3);
-            if (count($skippedReasons) > 3) {
-                $preview[] = "...and " . (count($skippedReasons) - 3) . " more.";
-            }
-            Auth::flash('import_skipped', implode(' | ', $preview));
+            Auth::flash('success', "Import completed: {$imported} customers created." . ($skipped > 0 ? " ({$skipped} skipped)" : ""));
         }
 
         Response::redirect(url('/customers'));
