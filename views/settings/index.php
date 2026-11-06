@@ -122,6 +122,101 @@
         </form>
     </div>
 
+    <!-- Section 2b: Dairy Product Catalog & Default Pricing (Approach A: Multi-Product Support) -->
+    <div class="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+                <h2 class="text-lg font-black text-slate-900 mb-1 flex items-center gap-2">
+                    <span>📦 Dairy Product Catalog & Default Pricing</span>
+                </h2>
+                <p class="text-xs text-slate-500">
+                    Manage all products offered by your dairy (Cow Milk, Buffalo Milk, Paneer, Curd, Ghee). Add new items with independent units and pricing.
+                </p>
+            </div>
+        </div>
+
+        <!-- Add New Product Form -->
+        <form method="POST" action="<?= url('/settings/products') ?>" class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+            <?= \App\Core\Auth::csrfField() ?>
+            <div class="font-black text-xs text-slate-900 uppercase tracking-wider">+ Add New Product to Catalog</div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div class="sm:col-span-2">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Product Name *</label>
+                    <input type="text" name="name" required placeholder="e.g. Fresh Malai Paneer, Curd, A2 Milk" class="w-full text-xs font-bold px-3 py-2 border border-slate-300 rounded-xl bg-white">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Measurement Unit *</label>
+                    <select name="unit" class="w-full text-xs font-bold px-3 py-2 border border-slate-300 rounded-xl bg-white">
+                        <option value="L">Liters (L)</option>
+                        <option value="kg">Kilograms (kg)</option>
+                        <option value="packet">Packet / Pouch</option>
+                        <option value="pc">Piece / Unit</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Default Rate (₹/unit) *</label>
+                    <input type="number" step="0.5" min="1" max="5000" name="default_rate" required placeholder="e.g. 65.00" class="w-full text-xs font-black px-3 py-2 border border-slate-300 rounded-xl bg-white">
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-1">
+                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow transition">
+                    + Add Product
+                </button>
+            </div>
+        </form>
+
+        <!-- Current Product Catalog List -->
+        <div class="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden">
+            <?php if (empty($products)): ?>
+                <div class="p-6 text-center text-xs text-slate-400">No products configured yet. Default Cow & Buffalo milk will be generated automatically.</div>
+            <?php else: ?>
+                <?php foreach ($products as $pr): 
+                    $pIcon = $pr['code'] === 'buffalo' ? '🐃' : ($pr['code'] === 'cow' ? '🐄' : ($pr['code'] === 'paneer' ? '🧀' : '🥛'));
+                ?>
+                    <div class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 transition <?= !$pr['is_active'] ? 'bg-slate-50/70 opacity-60' : '' ?>">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl"><?= $pIcon ?></span>
+                            <div>
+                                <div class="font-black text-sm text-slate-900 flex items-center gap-2">
+                                    <span><?= e($pr['name']) ?></span>
+                                    <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                        <?= e($pr['code']) ?>
+                                    </span>
+                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?= $pr['is_active'] ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600' ?>">
+                                        <?= $pr['is_active'] ? 'Active' : 'Inactive' ?>
+                                    </span>
+                                </div>
+                                <div class="text-xs text-slate-500 mt-0.5">
+                                    Unit: <strong><?= e($pr['unit']) ?></strong> • Base Rate: <strong><?= formatMoney($pr['default_rate']) ?> / <?= e($pr['unit']) ?></strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 self-end sm:self-center">
+                            <form method="POST" action="<?= url("/settings/products/{$pr['id']}/toggle") ?>">
+                                <?= \App\Core\Auth::csrfField() ?>
+                                <button type="submit" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border <?= $pr['is_active'] ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200' ?>">
+                                    <?= $pr['is_active'] ? 'Deactivate' : 'Activate' ?>
+                                </button>
+                            </form>
+
+                            <?php if (!in_array($pr['code'], ['cow', 'buffalo'], true)): ?>
+                                <form method="POST" action="<?= url("/settings/products/{$pr['id']}/delete") ?>" onsubmit="return confirm('Remove product \'<?= e($pr['name']) ?>\' from catalog?');">
+                                    <?= \App\Core\Auth::csrfField() ?>
+                                    <button type="submit" class="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-bold">
+                                        🗑️
+                                    </button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <!-- Section 3: Custom Additional Charges / Surcharges (Module Specification) -->
     <div class="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-6">
         <div>

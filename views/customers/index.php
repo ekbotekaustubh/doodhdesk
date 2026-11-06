@@ -13,7 +13,19 @@
             </p>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
+            <a href="<?= url('/customers/sample-csv') ?>" class="tap-target px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center gap-1.5 whitespace-nowrap" title="Download Sample CSV Template">
+                <span>📄 Sample CSV</span>
+            </a>
+
+            <a href="<?= url('/customers/export' . (!empty($_SERVER['QUERY_STRING']) ? '?' . e($_SERVER['QUERY_STRING']) : '')) ?>" class="tap-target px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center gap-1.5 whitespace-nowrap" title="Export customers to CSV file">
+                <span>📤 Export CSV</span>
+            </a>
+
+            <button type="button" onclick="document.getElementById('import-modal').classList.remove('hidden')" class="tap-target px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition flex items-center gap-1.5 whitespace-nowrap" title="Import customers from CSV file">
+                <span>📥 Import CSV</span>
+            </button>
+
             <?php if ($quota['can_add']): ?>
                 <a href="<?= url('/customers/create') ?>" class="tap-target px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 whitespace-nowrap">
                     <span>+ Add Customer</span>
@@ -50,6 +62,17 @@
         </div>
     <?php endif; ?>
 
+    <!-- Import Skipped Rows Notification -->
+    <?php if (!empty($import_skipped)): ?>
+        <div class="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs flex items-center justify-between shadow-sm">
+            <div class="flex items-center gap-2">
+                <span class="text-amber-600 font-bold">⚠️ Import Notice:</span>
+                <span><?= e($import_skipped) ?></span>
+            </div>
+            <button type="button" onclick="this.parentElement.remove()" class="text-amber-600 hover:text-amber-800 font-bold px-1 text-sm">✕</button>
+        </div>
+    <?php endif; ?>
+
     <!-- Filter & Search Bar -->
     <div class="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm flex flex-col sm:flex-row items-center gap-2">
         <form method="GET" action="<?= url('/customers') ?>" class="w-full flex flex-col sm:flex-row items-center gap-2">
@@ -63,6 +86,13 @@
                 <?php foreach ($routes as $r): ?>
                     <option value="<?= e($r) ?>" <?= $selectedRoute === $r ? 'selected' : '' ?>><?= e($r) ?></option>
                 <?php endforeach; ?>
+            </select>
+
+            <select name="milk_type" onchange="this.form.submit()" class="w-full sm:w-36 text-xs font-bold py-2 px-3 border border-slate-300 rounded-xl bg-slate-50">
+                <option value="">All Milk Types</option>
+                <option value="cow" <?= ($selectedMilkType ?? '') === 'cow' ? 'selected' : '' ?>>🐄 Cow Milk</option>
+                <option value="buffalo" <?= ($selectedMilkType ?? '') === 'buffalo' ? 'selected' : '' ?>>🐃 Buffalo Milk</option>
+                <option value="both" <?= ($selectedMilkType ?? '') === 'both' ? 'selected' : '' ?>>🐄+🐃 Both Milks</option>
             </select>
 
             <select name="status" onchange="this.form.submit()" class="w-full sm:w-36 text-xs font-bold py-2 px-3 border border-slate-300 rounded-xl bg-slate-50">
@@ -98,6 +128,7 @@
                                 <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
                                     <?= e($c['route_name'] ?? 'Main Route') ?>
                                 </span>
+                                <?= formatMilkTypesBadge($c['milk_types'] ?? 'cow') ?>
                                 <?php if ($c['status'] === 'inactive'): ?>
                                     <span class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-600 font-bold">Inactive</span>
                                 <?php endif; ?>
@@ -110,10 +141,25 @@
                             <p class="text-xs text-slate-500 mt-0.5">
                                 <?= e($c['address']) ?> • <a href="tel:<?= e($c['phone']) ?>" class="text-blue-600 font-mono hover:underline"><?= e($c['phone']) ?></a>
                             </p>
-                            <div class="text-xs text-slate-600 mt-1 flex items-center gap-2">
-                                <span>Default: <strong class="text-slate-900"><?= number_format((float)$c['default_quantity'], 1) ?> L/day</strong></span>
-                                <span>•</span>
-                                <span>Rate: <strong class="text-slate-900"><?= formatMoney($c['rate_per_unit']) ?>/L</strong></span>
+                            <div class="text-xs text-slate-600 mt-1 flex items-center gap-2 flex-wrap">
+                                <?php if (!empty($c['subscriptions'])): ?>
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <?php foreach ($c['subscriptions'] as $cs): ?>
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 text-[11px] font-bold border border-slate-200">
+                                                <span><?= $cs['product_code'] === 'buffalo' ? '🐃' : ($cs['product_code'] === 'cow' ? '🐄' : ($cs['product_code'] === 'paneer' ? '🧀' : '🥛')) ?></span>
+                                                <span><?= e($cs['product_name']) ?>:</span>
+                                                <strong class="text-slate-900"><?= number_format((float)$cs['default_quantity'], 1) ?> <?= e($cs['unit']) ?></strong>
+                                                <span class="text-slate-400 font-normal">(@ <?= formatMoney($cs['custom_rate'] ?? $cs['product_default_rate']) ?>)</span>
+                                            </span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <span>•</span>
+                                    <span>Daily Total: <strong class="text-slate-900"><?= number_format((float)$c['default_quantity'], 1) ?> Units</strong></span>
+                                <?php else: ?>
+                                    <span>Default: <strong class="text-slate-900"><?= number_format((float)$c['default_quantity'], 1) ?> L/day</strong></span>
+                                    <span>•</span>
+                                    <span>Rate: <strong class="text-slate-900"><?= formatMoney($c['rate_per_unit']) ?>/L</strong></span>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -175,6 +221,87 @@
             <button type="submit" class="tap-target w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl font-black text-sm shadow-xl transition">
                 ⚡ Upgrade Capacity (+<?= $quota['unit_size'] ?> Slots for <?= formatMoney($quota['unit_price'], $quota['currency_symbol']) ?>)
             </button>
+        </form>
+    </div>
+</div>
+
+<!-- Import Customers CSV Modal -->
+<div id="import-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl border border-slate-200 relative">
+        <button type="button" onclick="document.getElementById('import-modal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700 font-bold text-xl">✕</button>
+
+        <div class="flex items-center gap-3 mb-4">
+            <span class="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center text-2xl font-black shrink-0">
+                📥
+            </span>
+            <div>
+                <h3 class="text-xl font-black text-slate-900">Import Customers from CSV</h3>
+                <p class="text-xs text-slate-500">Bulk upload your customer accounts from any CSV spreadsheet.</p>
+            </div>
+        </div>
+
+        <!-- Sample Download Box -->
+        <div class="bg-blue-50/70 rounded-2xl p-4 border border-blue-200 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+                <div class="font-bold text-xs text-blue-950 flex items-center gap-1.5">
+                    <span>📄 Sample Format Template</span>
+                </div>
+                <p class="text-[11px] text-blue-800 mt-0.5">
+                    Includes sample columns & values for Cow, Buffalo, or Both milks.
+                </p>
+            </div>
+            <a href="<?= url('/customers/sample-csv') ?>" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition inline-flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center">
+                <span>⬇️ Download Sample CSV</span>
+            </a>
+        </div>
+
+        <form method="POST" action="<?= url('/customers/import') ?>" enctype="multipart/form-data" class="space-y-4">
+            <?= \App\Core\Auth::csrfField() ?>
+
+            <!-- File Upload Input -->
+            <div>
+                <label class="block text-xs font-black uppercase text-slate-700 mb-1">
+                    Select CSV File <span class="text-rose-500">*</span>
+                </label>
+                <input type="file" 
+                       name="csv_file" 
+                       accept=".csv,text/csv" 
+                       required
+                       class="block w-full text-xs text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 border border-slate-300 rounded-xl bg-slate-50 p-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <span class="text-[10px] text-slate-400 mt-1 block">Standard UTF-8 encoded .csv format</span>
+            </div>
+
+            <!-- Update Existing Checkbox -->
+            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <label class="flex items-start gap-2.5 cursor-pointer">
+                    <input type="checkbox" name="update_existing" value="1" checked class="mt-0.5 w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
+                    <span class="text-xs text-slate-700 font-medium">
+                        <strong>Update existing customers</strong> if a matching phone number is found. If unchecked, duplicates are skipped.
+                    </span>
+                </label>
+            </div>
+
+            <!-- Expected Format Columns Guide -->
+            <div class="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+                <div class="font-bold text-slate-700 text-[11px]">Supported CSV Columns:</div>
+                <div class="font-mono text-[10px] text-slate-600">
+                    Name, Phone, Address, Route, Milk Type, Default Quantity, Rate Per Unit, Status
+                </div>
+                <div class="text-[10px] text-slate-500 pt-1">
+                    • <strong>Milk Type:</strong> <code class="font-mono">cow</code>, <code class="font-mono">buffalo</code>, or <code class="font-mono">cow,buffalo</code><br>
+                    • Active quota: <strong><?= $quota['remaining_slots'] ?> remaining slots</strong> on your plan.
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center gap-2 pt-2">
+                <button type="submit" class="tap-target flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md transition text-center">
+                    🚀 Upload & Import Customers
+                </button>
+                <button type="button" onclick="document.getElementById('import-modal').classList.add('hidden')" class="tap-target px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition">
+                    Cancel
+                </button>
+            </div>
         </form>
     </div>
 </div>

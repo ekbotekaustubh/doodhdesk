@@ -30,7 +30,7 @@ final class InvoiceController
         $month = (int)$request->get('month', (int)date('m'));
         $status = (string)$request->get('status', '');
 
-        $sql = "SELECT inv.*, c.name AS customer_name, c.phone AS customer_phone, c.route_name
+        $sql = "SELECT inv.*, c.name AS customer_name, c.phone AS customer_phone, c.route_name, c.milk_types
                 FROM invoices inv
                 JOIN customers c ON c.id = inv.customer_id
                 WHERE inv.tenant_id = ? AND inv.billing_year = ? AND inv.billing_month = ?";
@@ -108,20 +108,14 @@ final class InvoiceController
         $tenantId = Auth::tenantId();
         $id = (int)($params['id'] ?? 0);
 
-        $invoice = $this->db->fetchOne(
-            "SELECT inv.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, c.route_name
-             FROM invoices inv
-             JOIN customers c ON c.id = inv.customer_id
-             WHERE inv.id = ? AND inv.tenant_id = ?",
-            [$id, $tenantId]
-        );
+        $invoice = $this->getInvoiceWithCustomer($id, $tenantId);
 
         if (!$invoice) {
             Auth::flash('error', 'Invoice not found.');
             Response::redirect(url('/invoices'));
         }
 
-        $breakdown = json_decode((string)$invoice['breakdown_json'], true) ?: [];
+        $breakdown = $this->prepareInvoiceBreakdown($invoice, $tenantId);
 
         // Tenant & branding settings
         $tenant = $this->db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$tenantId]);
@@ -149,19 +143,13 @@ final class InvoiceController
         $tenantId = Auth::tenantId();
         $id = (int)($params['id'] ?? 0);
 
-        $invoice = $this->db->fetchOne(
-            "SELECT inv.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, c.route_name
-             FROM invoices inv
-             JOIN customers c ON c.id = inv.customer_id
-             WHERE inv.id = ? AND inv.tenant_id = ?",
-            [$id, $tenantId]
-        );
+        $invoice = $this->getInvoiceWithCustomer($id, $tenantId);
 
         if (!$invoice) {
             Response::error('Invoice not found', 404);
         }
 
-        $breakdown = json_decode((string)$invoice['breakdown_json'], true) ?: [];
+        $breakdown = $this->prepareInvoiceBreakdown($invoice, $tenantId);
         $tenant = $this->db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$tenantId]);
         $settings = $this->db->fetchOne("SELECT * FROM tenant_settings WHERE tenant_id = ?", [$tenantId]);
 
@@ -179,19 +167,13 @@ final class InvoiceController
         $id = (int)($params['id'] ?? 0);
         $format = (string)$request->get('format', '80mm'); // 80mm or 58mm
 
-        $invoice = $this->db->fetchOne(
-            "SELECT inv.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, c.route_name
-             FROM invoices inv
-             JOIN customers c ON c.id = inv.customer_id
-             WHERE inv.id = ? AND inv.tenant_id = ?",
-            [$id, $tenantId]
-        );
+        $invoice = $this->getInvoiceWithCustomer($id, $tenantId);
 
         if (!$invoice) {
             Response::error('Invoice not found', 404);
         }
 
-        $breakdown = json_decode((string)$invoice['breakdown_json'], true) ?: [];
+        $breakdown = $this->prepareInvoiceBreakdown($invoice, $tenantId);
         $tenant = $this->db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$tenantId]);
         $settings = $this->db->fetchOne("SELECT * FROM tenant_settings WHERE tenant_id = ?", [$tenantId]);
 
@@ -210,19 +192,13 @@ final class InvoiceController
         $id = (int)($params['id'] ?? 0);
         $type = (string)$request->get('type', 'a4'); // a4, thermal80, thermal58
 
-        $invoice = $this->db->fetchOne(
-            "SELECT inv.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, c.route_name
-             FROM invoices inv
-             JOIN customers c ON c.id = inv.customer_id
-             WHERE inv.id = ? AND inv.tenant_id = ?",
-            [$id, $tenantId]
-        );
+        $invoice = $this->getInvoiceWithCustomer($id, $tenantId);
 
         if (!$invoice) {
             Response::error('Invoice not found', 404);
         }
 
-        $breakdown = json_decode((string)$invoice['breakdown_json'], true) ?: [];
+        $breakdown = $this->prepareInvoiceBreakdown($invoice, $tenantId);
         $tenant = $this->db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$tenantId]);
         $settings = $this->db->fetchOne("SELECT * FROM tenant_settings WHERE tenant_id = ?", [$tenantId]);
 
@@ -244,6 +220,91 @@ final class InvoiceController
 
         $filename = "Invoice-{$invoice['billing_year']}-{$invoice['billing_month']}-{$invoice['customer_name']}.pdf";
         PdfExportService::streamPdf($html, $filename, $paper);
+    }
+
+    private function getInvoiceWithCustomer(int $id, int $tenantId): ?array
+    {
+        return $this->db->fetchOne(
+            "SELECT inv.*, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, c.route_name, c.milk_types
+             FROM invoices inv
+             JOIN customers c ON c.id = inv.customer_id
+             WHERE inv.id = ? AND inv.tenant_id = ?",
+            [$id, $tenantId]
+        );
+    }
+
+    private function prepareInvoiceBreakdown(array $invoice, int $tenantId): array
+    {
+        $breakdown = json_decode((string)$invoice['breakdown_json'], true) ?: [];
+
+        $year = (int)$invoice['billing_year'];
+        $month = (int)$invoice['billing_month'];
+        $daysInMonth = (int)cal_days_in_month(CAL_GREGORIAN, $month, $year);
+        $startDate = sprintf('%04d-%02d-01', $year, $month);
+        $endDate = sprintf('%04d-%02d-%02d', $year, $month, $daysInMonth);
+
+        // Populate products breakdown if not stored in json
+        if (empty($breakdown['products'])) {
+            $dItems = $this->db->fetchAll(
+                "SELECT ddi.*, p.name as product_name, p.code as product_code, p.unit
+                 FROM daily_delivery_items ddi
+                 JOIN daily_deliveries dd ON dd.id = ddi.delivery_id
+                 JOIN products p ON p.id = ddi.product_id
+                 WHERE ddi.tenant_id = ? AND dd.customer_id = ? AND dd.delivery_date BETWEEN ? AND ? AND ddi.status = 'delivered'",
+                [$tenantId, (int)$invoice['customer_id'], $startDate, $endDate]
+            );
+
+            if (!empty($dItems)) {
+                $pSumm = [];
+                foreach ($dItems as $di) {
+                    $pid = (int)$di['product_id'];
+                    if (!isset($pSumm[$pid])) {
+                        $pSumm[$pid] = [
+                            'product_id' => $pid,
+                            'name' => $di['product_name'],
+                            'code' => $di['product_code'],
+                            'unit' => $di['unit'],
+                            'unit_price' => (float)$di['unit_price'],
+                            'total_units' => 0.0,
+                            'subtotal' => 0.0,
+                        ];
+                    }
+                    $qty = (float)$di['quantity'];
+                    $pSumm[$pid]['total_units'] += $qty;
+                    $pSumm[$pid]['subtotal'] += round($qty * (float)$di['unit_price'], 2);
+                }
+                $breakdown['products'] = array_values($pSumm);
+            }
+        }
+
+        if (empty($breakdown['calendar_matrix'])) {
+            if (empty($breakdown['itemized_deliveries'])) {
+                $customerRate = (float)($breakdown['customer_rate'] ?? $breakdown['rate_per_unit'] ?? 60.0);
+
+                $deliveries = $this->db->fetchAll(
+                    "SELECT delivery_date as date, shift, status, quantity, notes
+                     FROM daily_deliveries
+                     WHERE tenant_id = ? AND customer_id = ? AND delivery_date BETWEEN ? AND ?
+                     ORDER BY delivery_date ASC, shift ASC",
+                    [$tenantId, (int)$invoice['customer_id'], $startDate, $endDate]
+                );
+
+                foreach ($deliveries as &$del) {
+                    $del['quantity'] = (float)$del['quantity'];
+                    $del['amount'] = round($del['quantity'] * $customerRate, 2);
+                }
+                unset($del);
+
+                $breakdown['itemized_deliveries'] = $deliveries;
+            }
+
+            $matrixData = buildCalendarMatrix($breakdown, (int)$invoice['billing_year'], (int)$invoice['billing_month']);
+            $breakdown['calendar_matrix'] = $matrixData['matrix'];
+            $breakdown['first_day_of_week'] = $matrixData['first_day_of_week'];
+            $breakdown['days_in_month'] = $matrixData['days_in_month'];
+        }
+
+        return $breakdown;
     }
 
     public function recordPayment(Request $request, array $params): void

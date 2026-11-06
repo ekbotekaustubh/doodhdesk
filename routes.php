@@ -36,6 +36,9 @@ return function (Router $router): void {
     // 4. Customers & Vacation Management (Quota Guarded)
     $router->get('/customers', [CustomerController::class, 'index'], ['tenant']);
     $router->get('/customers/create', [CustomerController::class, 'createView'], ['tenant']);
+    $router->get('/customers/export', [CustomerController::class, 'exportCsv'], ['tenant']);
+    $router->get('/customers/sample-csv', [CustomerController::class, 'sampleCsv'], ['tenant']);
+    $router->post('/customers/import', [CustomerController::class, 'importCsv'], ['tenant']);
     $router->post('/customers', [CustomerController::class, 'store'], ['tenant']);
     $router->get('/customers/{id}/edit', [CustomerController::class, 'editView'], ['tenant']);
     $router->post('/customers/{id}', [CustomerController::class, 'update'], ['tenant']);
@@ -56,6 +59,9 @@ return function (Router $router): void {
     $router->get('/settings', [SettingsController::class, 'index'], ['tenant']);
     $router->post('/settings/profile', [SettingsController::class, 'updateProfile'], ['tenant']);
     $router->post('/settings/taxes', [SettingsController::class, 'updateTaxes'], ['tenant']);
+    $router->post('/settings/products', [SettingsController::class, 'addProduct'], ['tenant']);
+    $router->post('/settings/products/{id}/toggle', [SettingsController::class, 'toggleProduct'], ['tenant']);
+    $router->post('/settings/products/{id}/delete', [SettingsController::class, 'deleteProduct'], ['tenant']);
     $router->post('/settings/charges', [SettingsController::class, 'addCharge'], ['tenant']);
     $router->post('/settings/charges/{id}/toggle', [SettingsController::class, 'toggleCharge'], ['tenant']);
     $router->post('/settings/charges/{id}/delete', [SettingsController::class, 'deleteCharge'], ['tenant']);

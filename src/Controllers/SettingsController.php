@@ -8,17 +8,20 @@ use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
+use App\Services\ProductService;
 use App\Services\QuotaService;
 
 final class SettingsController
 {
     private Database $db;
     private QuotaService $quotaService;
+    private ProductService $productService;
 
     public function __construct()
     {
         $this->db = Database::getInstance();
         $this->quotaService = new QuotaService();
+        $this->productService = new ProductService();
     }
 
     public function index(Request $request): void
@@ -28,16 +31,54 @@ final class SettingsController
         $tenant = $this->db->fetchOne("SELECT * FROM tenants WHERE id = ?", [$tenantId]);
         $settings = $this->db->fetchOne("SELECT * FROM tenant_settings WHERE tenant_id = ?", [$tenantId]);
         $charges = $this->db->fetchAll("SELECT * FROM tenant_additional_charges WHERE tenant_id = ? ORDER BY id ASC", [$tenantId]);
+        $products = $this->productService->getTenantProducts($tenantId, false);
         $quota = $this->quotaService->getTenantQuota($tenantId);
 
         View::render('settings/index', [
             'tenant' => $tenant,
             'settings' => $settings,
             'charges' => $charges,
+            'products' => $products,
             'quota' => $quota,
             'success' => Auth::flash('success'),
             'error' => Auth::flash('error'),
         ], 'main');
+    }
+
+    public function addProduct(Request $request): void
+    {
+        $tenantId = Auth::tenantId();
+        $name = trim((string)$request->post('name', ''));
+        $code = trim((string)$request->post('code', ''));
+        $unit = trim((string)$request->post('unit', 'L'));
+        $defaultRate = (float)$request->post('default_rate', 60.0);
+
+        if (empty($name) || $defaultRate <= 0) {
+            Auth::flash('error', 'Please provide a valid product name and default rate.');
+            Response::redirect(url('/settings'));
+        }
+
+        $this->productService->createProduct($tenantId, $name, $code, $unit, $defaultRate);
+        Auth::flash('success', "Product '{$name}' added to catalog successfully.");
+        Response::redirect(url('/settings'));
+    }
+
+    public function toggleProduct(Request $request, array $params): void
+    {
+        $tenantId = Auth::tenantId();
+        $productId = (int)($params['id'] ?? 0);
+        $this->productService->toggleProduct($tenantId, $productId);
+        Auth::flash('success', 'Product status updated.');
+        Response::redirect(url('/settings'));
+    }
+
+    public function deleteProduct(Request $request, array $params): void
+    {
+        $tenantId = Auth::tenantId();
+        $productId = (int)($params['id'] ?? 0);
+        $this->productService->deleteProduct($tenantId, $productId);
+        Auth::flash('success', 'Product removed from catalog.');
+        Response::redirect(url('/settings'));
     }
 
     public function updateProfile(Request $request): void

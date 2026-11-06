@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../src/helpers.php';
 
 $pdo = getDbConnection();
 
@@ -75,32 +76,70 @@ $pdo->prepare("INSERT INTO tenant_subscriptions (id, tenant_id, purchased_blocks
     ON DUPLICATE KEY UPDATE max_customers_allowed = 5, payment_status = 'free'")
     ->execute();
 
+// 4. Products & Catalog for Tenants (Approach A: Normalized Multi-Product Architecture)
+$pdo->prepare("DELETE FROM daily_delivery_items WHERE tenant_id IN (1, 2)")->execute();
+$pdo->prepare("DELETE FROM customer_subscriptions WHERE tenant_id IN (1, 2)")->execute();
+$pdo->prepare("DELETE FROM products WHERE tenant_id IN (1, 2)")->execute();
+
+$prodStmt = $pdo->prepare("INSERT INTO products (id, tenant_id, name, code, unit, default_rate, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+// Tenant 1 Products
+$prodStmt->execute([1, 1, 'Cow Milk', 'cow', 'L', 65.00, 1, 1]);
+$prodStmt->execute([2, 1, 'Buffalo Milk', 'buffalo', 'L', 70.00, 1, 2]);
+$prodStmt->execute([3, 1, 'Fresh Paneer', 'paneer', 'kg', 360.00, 1, 3]);
+
+// Tenant 2 Products
+$prodStmt->execute([101, 2, 'Cow Milk', 'cow', 'L', 60.00, 1, 1]);
+$prodStmt->execute([102, 2, 'Buffalo Milk', 'buffalo', 'L', 68.00, 1, 2]);
+
 // 5. Customers for Tenant 1
 $pdo->prepare("DELETE FROM customers WHERE tenant_id = 1")->execute();
-$custStmt = $pdo->prepare("INSERT INTO customers (id, tenant_id, name, phone, address, route_name, default_quantity, rate_per_unit, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$custStmt = $pdo->prepare("INSERT INTO customers (id, tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 $customers = [
-    [1, 1, 'Aarav Sharma', '9822011111', 'Flat 101, Gokul Heights, Station Road', 'Green Valley Route', 2.00, 65.00, 'active'],
-    [2, 1, 'Priya Verma', '9822022222', 'B-204, Sunrise Residency, Near Temple', 'Green Valley Route', 1.50, 65.00, 'active'],
-    [3, 1, 'Rajesh Gupta', '9822033333', 'House #14, Civil Lines, Main Market', 'North City Route', 1.00, 60.00, 'active'],
-    [4, 1, 'Sneha Kulkarni', '9822044444', 'Flat 302, Palm Grove Society', 'Green Valley Route', 2.50, 68.00, 'active'],
-    [5, 1, 'Vikram Singh', '9822055555', 'Villa 5, Lakeview Society, Ring Road', 'North City Route', 3.00, 70.00, 'active'],
-    [6, 1, 'Ananya Deshmukh', '9822066666', 'Flat 405, Lotus Residency', 'North City Route', 1.00, 65.00, 'active'],
+    [1, 1, 'Aarav Sharma', '9822011111', 'Flat 101, Gokul Heights, Station Road', 'Green Valley Route', 'cow', 2.00, 65.00, 'active'],
+    [2, 1, 'Priya Verma', '9822022222', 'B-204, Sunrise Residency, Near Temple', 'Green Valley Route', 'buffalo', 1.50, 70.00, 'active'],
+    [3, 1, 'Rajesh Gupta', '9822033333', 'House #14, Civil Lines, Main Market', 'North City Route', 'cow,buffalo', 1.50, 60.00, 'active'],
+    [4, 1, 'Sneha Kulkarni', '9822044444', 'Flat 302, Palm Grove Society', 'Green Valley Route', 'cow', 2.50, 65.00, 'active'],
+    [5, 1, 'Vikram Singh', '9822055555', 'Villa 5, Lakeview Society, Ring Road', 'North City Route', 'buffalo', 3.00, 70.00, 'active'],
+    [6, 1, 'Ananya Deshmukh', '9822066666', 'Flat 405, Lotus Residency', 'North City Route', 'cow,buffalo', 2.00, 65.00, 'active'],
 ];
 foreach ($customers as $c) {
     $custStmt->execute($c);
 }
 
+// Subscriptions for Tenant 1 Customers
+$subStmt = $pdo->prepare("INSERT INTO customer_subscriptions (tenant_id, customer_id, product_id, default_quantity, custom_rate, shift, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)");
+// Customer 1: Aarav (Cow 2.0L @ 65)
+$subStmt->execute([1, 1, 1, 2.00, 65.00, 'both', 1]);
+// Customer 2: Priya (Buffalo 1.5L @ 70)
+$subStmt->execute([1, 2, 2, 1.50, 70.00, 'both', 1]);
+// Customer 3: Rajesh Gupta takes BOTH Cow & Buffalo with separate quantities & rates!
+$subStmt->execute([1, 3, 1, 1.00, 60.00, 'both', 1]);
+$subStmt->execute([1, 3, 2, 0.50, 70.00, 'both', 1]);
+// Customer 4: Sneha (Cow 2.5L @ 65)
+$subStmt->execute([1, 4, 1, 2.50, 65.00, 'both', 1]);
+// Customer 5: Vikram (Buffalo 3.0L @ 70)
+$subStmt->execute([1, 5, 2, 3.00, 70.00, 'both', 1]);
+// Customer 6: Ananya takes BOTH Cow & Buffalo with separate quantities!
+$subStmt->execute([1, 6, 1, 1.00, 65.00, 'both', 1]);
+$subStmt->execute([1, 6, 2, 1.00, 70.00, 'both', 1]);
+
 // 4 Customers for Tenant 2 (Free tier)
 $pdo->prepare("DELETE FROM customers WHERE tenant_id = 2")->execute();
 $tenant2Cust = [
-    [101, 2, 'Kavita Joshi', '9911011111', 'A-12 Shiv Krupa', 'Sector 1', 1.00, 60.00, 'active'],
-    [102, 2, 'Manoj Patil', '9911022222', 'B-04 Golden Nest', 'Sector 1', 2.00, 62.00, 'active'],
-    [103, 2, 'Dinesh Rao', '9911033333', 'C-31 Shanti Niketan', 'Sector 2', 1.50, 60.00, 'active'],
-    [104, 2, 'Neha Agarwal', '9911044444', 'D-15 Park View', 'Sector 2', 1.00, 65.00, 'active'],
+    [101, 2, 'Kavita Joshi', '9911011111', 'A-12 Shiv Krupa', 'Sector 1', 'cow', 1.00, 60.00, 'active'],
+    [102, 2, 'Manoj Patil', '9911022222', 'B-04 Golden Nest', 'Sector 1', 'cow,buffalo', 2.00, 62.00, 'active'],
+    [103, 2, 'Dinesh Rao', '9911033333', 'C-31 Shanti Niketan', 'Sector 2', 'buffalo', 1.50, 68.00, 'active'],
+    [104, 2, 'Neha Agarwal', '9911044444', 'D-15 Park View', 'Sector 2', 'cow', 1.00, 60.00, 'active'],
 ];
 foreach ($tenant2Cust as $c) {
     $custStmt->execute($c);
 }
+// Subscriptions for Tenant 2
+$subStmt->execute([2, 101, 101, 1.00, 60.00, 'both', 1]);
+$subStmt->execute([2, 102, 101, 1.00, 60.00, 'both', 1]);
+$subStmt->execute([2, 102, 102, 1.00, 68.00, 'both', 1]);
+$subStmt->execute([2, 103, 102, 1.50, 68.00, 'both', 1]);
+$subStmt->execute([2, 104, 101, 1.00, 60.00, 'both', 1]);
 
 // 6. Vacation / Customer Leaves for Priya Verma (Tenant 1)
 $pdo->prepare("DELETE FROM customer_leaves WHERE tenant_id = 1")->execute();
@@ -116,8 +155,40 @@ $pdo->prepare("INSERT INTO customer_leaves (tenant_id, customer_id, start_date, 
     ->execute([$leaveStart, $leaveEnd]);
 
 // 7. Seed Daily Deliveries for Tenant 1 for the previous month and current month up to today!
+$pdo->prepare("DELETE FROM daily_delivery_items WHERE tenant_id = 1")->execute();
 $pdo->prepare("DELETE FROM daily_deliveries WHERE tenant_id = 1")->execute();
+
 $delivStmt = $pdo->prepare("INSERT INTO daily_deliveries (tenant_id, customer_id, delivery_date, shift, quantity, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)");
+$delivItemStmt = $pdo->prepare("INSERT INTO daily_delivery_items (tenant_id, delivery_id, product_id, quantity, unit_price, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)");
+
+// Preload customer subscriptions for fast seeding
+$subRows = $pdo->query("SELECT cs.*, p.default_rate as prod_rate FROM customer_subscriptions cs JOIN products p ON p.id = cs.product_id WHERE cs.tenant_id = 1")->fetchAll(PDO::FETCH_ASSOC);
+$custSubsMap = [];
+foreach ($subRows as $sr) {
+    $custSubsMap[$sr['customer_id']][] = $sr;
+}
+
+$recordSeedDelivery = function(int $cId, string $date, string $shift, string $status, float $quantity, ?string $notes) use ($pdo, $delivStmt, $delivItemStmt, $custSubsMap) {
+    $delivStmt->execute([1, $cId, $date, $shift, $quantity, $status, $notes]);
+    $delivId = (int)$pdo->lastInsertId();
+
+    if (isset($custSubsMap[$cId])) {
+        foreach ($custSubsMap[$cId] as $cSub) {
+            $pId = (int)$cSub['product_id'];
+            $pRate = (float)($cSub['custom_rate'] ?? $cSub['prod_rate']);
+            $defaultSubQty = (float)$cSub['default_quantity'];
+
+            // If skipped or leave, 0.00
+            if ($status === 'skipped' || $status === 'leave') {
+                $pQty = 0.00;
+            } else {
+                // If adjusted total quantity, scale proportionally
+                $pQty = $defaultSubQty;
+            }
+            $delivItemStmt->execute([1, $delivId, $pId, $pQty, $pRate, $status, $notes]);
+        }
+    }
+};
 
 // Generate previous month full data (e.g., October 2026 or last month)
 $prevMonthDate = (clone $now)->modify('-1 month');
@@ -129,19 +200,19 @@ for ($day = 1; $day <= $daysInPrevMonth; $day++) {
     $dStr = sprintf('%04d-%02d-%02d', $prevYear, $prevMonth, $day);
     foreach ($customers as $c) {
         $cId = $c[0];
-        $defaultQty = $c[6];
+        $defaultQty = $c[7];
 
         // Shift 1: Morning
         // Let's create some missed days (e.g. day 7 and 21 for customer 1)
         if ($cId === 1 && ($day === 7 || $day === 21)) {
-            $delivStmt->execute([1, $cId, $dStr, 'morning', 0.00, 'skipped', 'Customer called to skip morning']);
+            $recordSeedDelivery($cId, $dStr, 'morning', 'skipped', 0.00, 'Customer called to skip morning');
         } elseif ($cId === 3 && $day >= 15 && $day <= 18) {
-            $delivStmt->execute([1, $cId, $dStr, 'morning', 0.00, 'leave', 'Out of station']);
+            $recordSeedDelivery($cId, $dStr, 'morning', 'leave', 0.00, 'Out of station');
         } elseif ($cId === 4 && $day === 12) {
             // Extra milk on Sunday!
-            $delivStmt->execute([1, $cId, $dStr, 'morning', $defaultQty + 1.0, 'delivered', 'Requested +1L extra milk']);
+            $recordSeedDelivery($cId, $dStr, 'morning', 'delivered', $defaultQty + 1.0, 'Requested +1L extra milk');
         } else {
-            $delivStmt->execute([1, $cId, $dStr, 'morning', $defaultQty, 'delivered', null]);
+            $recordSeedDelivery($cId, $dStr, 'morning', 'delivered', $defaultQty, null);
         }
     }
 }
@@ -152,11 +223,11 @@ for ($day = 1; $day <= $currentDay; $day++) {
     $dStr = sprintf('%04d-%02d-%02d', $currentYear, $currentMonth, $day);
     foreach ($customers as $c) {
         $cId = $c[0];
-        $defaultQty = $c[6];
+        $defaultQty = $c[7];
 
         // Check if on leave
         if ($cId === 2 && $dStr >= $leaveStart && $dStr <= $leaveEnd) {
-            $delivStmt->execute([1, $cId, $dStr, 'morning', 0.00, 'leave', 'Family vacation']);
+            $recordSeedDelivery($cId, $dStr, 'morning', 'leave', 0.00, 'Family vacation');
             continue;
         }
 
@@ -169,9 +240,9 @@ for ($day = 1; $day <= $currentDay; $day++) {
         }
 
         if ($cId === 1 && $day === 2) {
-            $delivStmt->execute([1, $cId, $dStr, 'morning', 0.00, 'skipped', 'Door locked, skipped']);
+            $recordSeedDelivery($cId, $dStr, 'morning', 'skipped', 0.00, 'Door locked, skipped');
         } else {
-            $delivStmt->execute([1, $cId, $dStr, 'morning', $defaultQty, 'delivered', null]);
+            $recordSeedDelivery($cId, $dStr, 'morning', 'delivered', $defaultQty, null);
         }
     }
 }
@@ -185,7 +256,7 @@ $invStmt = $pdo->prepare("INSERT INTO invoices (tenant_id, customer_id, billing_
 // Calculate for each customer in prev month
 foreach ($customers as $c) {
     $cId = $c[0];
-    $cRate = (float)$c[7];
+    $cRate = (float)$c[8];
 
     // Deliveries summary for prev month
     $q = $pdo->prepare("SELECT 
@@ -227,11 +298,28 @@ foreach ($customers as $c) {
     // Total Payable
     $finalAmount = round($milkSubtotal + $additionalChargesTotal + $taxAmount + $previousBalance, 2);
 
+    // Itemized deliveries for invoice audit log & matrix
+    $delivRows = $pdo->prepare("SELECT delivery_date as date, shift, status, quantity, notes FROM daily_deliveries WHERE tenant_id = 1 AND customer_id = ? AND delivery_date BETWEEN ? AND ? ORDER BY delivery_date ASC, shift ASC");
+    $delivRows->execute([$cId, $startPrev, $endPrev]);
+    $itemizedDeliveries = [];
+    while ($dr = $delivRows->fetch(PDO::FETCH_ASSOC)) {
+        $dr['quantity'] = (float)$dr['quantity'];
+        $dr['amount'] = round($dr['quantity'] * $cRate, 2);
+        $itemizedDeliveries[] = $dr;
+    }
+
+    $matrixData = buildCalendarMatrix([
+        'itemized_deliveries' => $itemizedDeliveries,
+        'days_in_month' => $daysInPrevMonth,
+    ], $prevYear, $prevMonth);
+
     $breakdown = [
         'customer_name' => $c[2],
         'customer_phone' => $c[3],
+        'customer_milk_types' => $c[6],
         'rate_per_unit' => $cRate,
         'billing_period' => sprintf('%02d/%04d', $prevMonth, $prevYear),
+        'days_in_month' => $daysInPrevMonth,
         'delivered_days' => $deliveredDays,
         'skipped_days' => $skippedDays,
         'leave_days' => $leaveDays,
@@ -249,6 +337,9 @@ foreach ($customers as $c) {
         'tax_amount' => $taxAmount,
         'previous_balance' => $previousBalance,
         'final_amount' => $finalAmount,
+        'itemized_deliveries' => $itemizedDeliveries,
+        'calendar_matrix' => $matrixData['matrix'],
+        'first_day_of_week' => $matrixData['first_day_of_week'],
     ];
 
     $paymentStatus = ($cId === 1 || $cId === 2) ? 'paid' : (($cId === 4) ? 'partial' : 'unpaid');

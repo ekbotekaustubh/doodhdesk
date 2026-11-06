@@ -107,11 +107,26 @@ final class DeliveryController
         $customerId = (int)$request->post('customer_id');
         $date = (string)$request->post('date', date('Y-m-d'));
         $shift = (string)$request->post('shift', 'morning');
-        $quantity = (float)$request->post('quantity', 1.0);
         $notes = trim((string)$request->post('notes', ''));
 
-        // If quantity is 0, mark as skipped
-        $status = $quantity > 0 ? DeliveryStatus::Delivered->value : DeliveryStatus::Skipped->value;
+        // Handle multi-product quantities if passed
+        $rawProductItems = $request->post('product_items');
+        $productItems = null;
+        $totalQty = 0.0;
+
+        if (is_array($rawProductItems)) {
+            $productItems = [];
+            foreach ($rawProductItems as $pId => $pQty) {
+                $qVal = max(0.0, (float)$pQty);
+                $productItems[(int)$pId] = $qVal;
+                $totalQty += $qVal;
+            }
+        } else {
+            $totalQty = (float)$request->post('quantity', 1.0);
+        }
+
+        // If total quantity is 0, mark as skipped
+        $status = $totalQty > 0 ? DeliveryStatus::Delivered->value : DeliveryStatus::Skipped->value;
 
         $delivery = $this->deliveryService->recordDelivery(
             $tenantId,
@@ -119,8 +134,9 @@ final class DeliveryController
             $date,
             $shift,
             $status,
-            $quantity,
-            empty($notes) ? "Adjusted qty to {$quantity}L" : $notes
+            $totalQty,
+            empty($notes) ? "Adjusted qty to {$totalQty}L" : $notes,
+            $productItems
         );
 
         if ($request->isHtmx()) {

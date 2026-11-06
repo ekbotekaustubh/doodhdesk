@@ -41,6 +41,9 @@ $isPdf = $isPdf ?? false;
             <div class="text-xs text-slate-600 mt-0.5"><?= e($invoice['customer_address']) ?></div>
             <div class="text-xs text-slate-600 mt-0.5">Phone: <strong class="font-mono"><?= e($invoice['customer_phone']) ?></strong></div>
             <div class="text-xs text-slate-600 mt-0.5">Route: <strong><?= e($invoice['route_name'] ?? 'Main Route') ?></strong></div>
+            <div class="text-xs text-slate-700 font-semibold mt-1">
+                Milk Subscribed: <strong><?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?></strong>
+            </div>
         </div>
 
         <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-1">
@@ -76,16 +79,30 @@ $isPdf = $isPdf ?? false;
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-                <!-- 1. Pure Milk Delivered Subtotal -->
-                <tr>
-                    <td class="p-2.5">
-                        <div class="font-bold text-slate-900">Farm Fresh Milk Delivered</div>
-                        <div class="text-[10px] text-slate-500">Actual deliveries tracked on daily run-sheet (Zero charges on skipped days)</div>
-                    </td>
-                    <td class="p-2.5 text-center font-mono"><?= formatMoney($breakdown['customer_rate'] ?? 65.00) ?> / L</td>
-                    <td class="p-2.5 text-center font-black"><?= number_format((float)$invoice['total_units'], 2) ?> L</td>
-                    <td class="p-2.5 text-right font-black"><?= formatMoney($invoice['milk_subtotal']) ?></td>
-                </tr>
+                <!-- 1. Products Delivered Line Items -->
+                <?php if (!empty($breakdown['products'])): ?>
+                    <?php foreach ($breakdown['products'] as $prod): ?>
+                        <tr>
+                            <td class="p-2.5">
+                                <div class="font-bold text-slate-900">Farm Fresh <?= e($prod['name']) ?> Delivered</div>
+                                <div class="text-[10px] text-slate-500">Tracked on daily run-sheet (Zero charges on skipped days)</div>
+                            </td>
+                            <td class="p-2.5 text-center font-mono"><?= formatMoney($prod['unit_price']) ?> / <?= e($prod['unit']) ?></td>
+                            <td class="p-2.5 text-center font-black"><?= number_format((float)$prod['total_units'], 2) ?> <?= e($prod['unit']) ?></td>
+                            <td class="p-2.5 text-right font-black"><?= formatMoney($prod['subtotal']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <tr>
+                        <td class="p-2.5">
+                            <div class="font-bold text-slate-900">Farm Fresh <?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?> Delivered</div>
+                            <div class="text-[10px] text-slate-500">Actual deliveries tracked on daily run-sheet (Zero charges on skipped days)</div>
+                        </td>
+                        <td class="p-2.5 text-center font-mono"><?= formatMoney($breakdown['customer_rate'] ?? 65.00) ?> / L</td>
+                        <td class="p-2.5 text-center font-black"><?= number_format((float)$invoice['total_units'], 2) ?> L</td>
+                        <td class="p-2.5 text-right font-black"><?= formatMoney($invoice['milk_subtotal']) ?></td>
+                    </tr>
+                <?php endif; ?>
 
                 <!-- 2. Custom Surcharges -->
                 <?php if (!empty($breakdown['charges'])): ?>
@@ -152,6 +169,77 @@ $isPdf = $isPdf ?? false;
             </tfoot>
         </table>
     </div>
+
+    <!-- Day-by-Day Calendar Delivery Matrix -->
+    <?php
+    $matrix = $breakdown['calendar_matrix'] ?? [];
+    $firstDayOfWeek = (int)($breakdown['first_day_of_week'] ?? 1);
+    $daysInMonth = (int)($breakdown['days_in_month'] ?? count($matrix));
+    ?>
+    <?php if (!empty($matrix)): ?>
+        <div class="py-3 border-t border-slate-200">
+            <div class="flex justify-between items-center mb-1.5">
+                <span class="text-[10px] font-black uppercase tracking-wider text-slate-700">
+                    Daily Delivery Matrix & Verification (<?= date('F Y', mktime(0, 0, 0, (int)$invoice['billing_month'], 10, (int)$invoice['billing_year'])) ?>)
+                </span>
+                <span class="text-[9px] text-slate-500">
+                    Each date marked with delivered milk quantity (0L = Skipped / Leave)
+                </span>
+            </div>
+            
+            <table class="w-full text-center border-collapse border border-slate-300 text-[10px]">
+                <thead>
+                    <tr class="bg-slate-100 text-slate-800 font-bold">
+                        <th class="p-1 border border-slate-300 w-[14.28%]">Mon</th>
+                        <th class="p-1 border border-slate-300 w-[14.28%]">Tue</th>
+                        <th class="p-1 border border-slate-300 w-[14.28%]">Wed</th>
+                        <th class="p-1 border border-slate-300 w-[14.28%]">Thu</th>
+                        <th class="p-1 border border-slate-300 w-[14.28%]">Fri</th>
+                        <th class="p-1 border border-slate-300 w-[14.28%] text-amber-800">Sat</th>
+                        <th class="p-1 border border-slate-300 w-[14.28%] text-rose-800">Sun</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                    <?php
+                    $col = 1;
+                    // Pad empty cells before first day of month
+                    for ($pad = 1; $pad < $firstDayOfWeek; $pad++) {
+                        echo '<td class="p-1 border border-slate-200 bg-slate-50/50">&nbsp;</td>';
+                        $col++;
+                    }
+
+                    for ($d = 1; $d <= $daysInMonth; $d++) {
+                        $cell = $matrix[$d] ?? ['quantity' => 0.0, 'status' => 'unrecorded'];
+                        $st = $cell['status'] ?? 'unrecorded';
+                        $q = (float)($cell['quantity'] ?? 0);
+                        
+                        $bg = $st === 'delivered' ? 'background-color: #ecfdf5;' : ($st === 'skipped' ? 'background-color: #fff1f2;' : ($st === 'leave' ? 'background-color: #f1f5f9;' : ''));
+                        $qtyText = $st === 'delivered' ? number_format($q, 1) . 'L' : ($st === 'skipped' ? '0L (Skip)' : ($st === 'leave' ? '0L (Lv)' : '-'));
+                        $qtyColor = $st === 'delivered' ? 'color: #047857; font-weight: bold;' : ($st === 'skipped' ? 'color: #be123c; font-weight: bold;' : 'color: #64748b;');
+
+                        echo "<td class=\"p-1 border border-slate-300 align-top\" style=\"{$bg}\">";
+                        echo "<div style=\"font-size: 8px; font-weight: bold; color: #475569;\">{$d}</div>";
+                        echo "<div style=\"font-size: 9px; line-height: 1.1; {$qtyColor}\">{$qtyText}</div>";
+                        echo "</td>";
+
+                        if ($col % 7 === 0 && $d < $daysInMonth) {
+                            echo "</tr><tr>";
+                        }
+                        $col++;
+                    }
+
+                    // Pad remaining cells of last row
+                    while (($col - 1) % 7 !== 0) {
+                        echo '<td class="p-1 border border-slate-200 bg-slate-50/50">&nbsp;</td>';
+                        $col++;
+                    }
+                    ?>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
 
     <!-- Payment UPI QR & Note Footer -->
     <div class="pt-6 border-t border-slate-200 grid grid-cols-3 gap-6 items-center">

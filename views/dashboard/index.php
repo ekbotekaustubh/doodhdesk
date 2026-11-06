@@ -66,6 +66,24 @@
                     <span>•</span>
                     <span>🌆 E: <?= number_format($runSheetEvening['stats']['total_liters'], 1) ?>L</span>
                 </div>
+                <?php 
+                $combinedProductTotals = [];
+                foreach ([$runSheetMorning['stats']['product_totals'] ?? [], $runSheetEvening['stats']['product_totals'] ?? []] as $pts) {
+                    foreach ($pts as $pName => $pData) {
+                        if (!isset($combinedProductTotals[$pName])) {
+                            $combinedProductTotals[$pName] = ['quantity' => 0.0, 'unit' => $pData['unit']];
+                        }
+                        $combinedProductTotals[$pName]['quantity'] += $pData['quantity'];
+                    }
+                }
+                ?>
+                <?php if (!empty($combinedProductTotals)): ?>
+                    <div class="text-[10px] text-blue-700 font-bold mt-1 space-x-1.5 flex flex-wrap">
+                        <?php foreach ($combinedProductTotals as $pName => $pData): ?>
+                            <span><?= e($pName) ?>: <?= number_format($pData['quantity'], 1) ?><?= e($pData['unit']) ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
 

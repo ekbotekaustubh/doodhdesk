@@ -73,9 +73,15 @@
         <div class="py-6 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
                 <span class="text-xs font-black uppercase text-slate-400 tracking-wider">Bill To Customer</span>
-                <h3 class="text-lg font-black text-slate-900 mt-1"><?= e($invoice['customer_name']) ?></h3>
+                <div class="flex items-center gap-2 mt-1">
+                    <h3 class="text-lg font-black text-slate-900"><?= e($invoice['customer_name']) ?></h3>
+                    <?= formatMilkTypesBadge($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?>
+                </div>
                 <p class="text-xs text-slate-600 mt-0.5"><?= e($invoice['customer_address']) ?></p>
                 <p class="text-xs text-slate-500 mt-0.5">Phone: <span class="font-mono"><?= e($invoice['customer_phone']) ?></span> • Route: <span class="font-semibold"><?= e($invoice['route_name'] ?? 'Main Route') ?></span></p>
+                <p class="text-xs text-slate-700 font-semibold mt-1">
+                    Subscribed: <strong class="text-slate-900"><?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?></strong>
+                </p>
             </div>
 
             <!-- Anti-Error Delivery Stats Summary -->
@@ -108,18 +114,35 @@
 
             <div class="bg-slate-50/70 rounded-2xl border border-slate-200 p-5 space-y-3 text-sm">
                 <!-- Step 1: Base Milk Subtotal -->
-                <div class="flex items-center justify-between pb-3 border-b border-slate-200">
-                    <div>
-                        <div class="font-bold text-slate-900">
-                            1. Base Milk Subtotal
+                <div class="pb-3 border-b border-slate-200 space-y-2">
+                    <div class="font-bold text-slate-900 flex items-center justify-between">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <span>1. Base Milk / Product Subtotal</span>
+                            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                                <?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?>
+                            </span>
                         </div>
+                        <div class="font-black text-slate-900 text-base">
+                            <?= formatMoney($invoice['milk_subtotal']) ?>
+                        </div>
+                    </div>
+                    <?php if (!empty($breakdown['products'])): ?>
+                        <div class="space-y-1.5 pl-3 border-l-2 border-blue-400 my-1">
+                            <?php foreach ($breakdown['products'] as $prod): ?>
+                                <div class="flex items-center justify-between text-xs">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="font-bold text-slate-800"><?= e($prod['name']) ?>:</span>
+                                        <span class="text-slate-500 font-mono"><?= number_format((float)$prod['total_units'], 2) ?> <?= e($prod['unit']) ?> @ <?= formatMoney($prod['unit_price']) ?>/<?= e($prod['unit']) ?></span>
+                                    </div>
+                                    <div class="font-bold text-slate-900"><?= formatMoney($prod['subtotal']) ?></div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
                         <div class="text-xs text-slate-500">
                             <?= number_format((float)$invoice['total_units'], 2) ?> Liters delivered × <?= formatMoney($breakdown['customer_rate'] ?? 65.00) ?>/L
                         </div>
-                    </div>
-                    <div class="font-black text-slate-900 text-base">
-                        <?= formatMoney($invoice['milk_subtotal']) ?>
-                    </div>
+                    <?php endif; ?>
                 </div>
 
                 <!-- Step 2: Custom Surcharges Line Items -->
@@ -235,54 +258,160 @@
         </div>
     </div>
 
-    <!-- Day-by-Day Itemized Delivery Calendar Matrix -->
-    <div class="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-4">
-        <h3 class="text-base font-black text-slate-900 flex items-center gap-2">
-            <span>📅 Day-by-Day Itemized Delivery Log</span>
-        </h3>
-        <p class="text-xs text-slate-500">
-            Audit trail of every morning and evening delivery for <?= date('F Y', mktime(0, 0, 0, (int)$invoice['billing_month'], 10, (int)$invoice['billing_year'])) ?>.
-        </p>
+    <!-- Day-by-Day Delivery Calendar Matrix -->
+    <div class="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+            <div>
+                <h3 class="text-base font-black text-slate-900 flex items-center gap-2">
+                    <span>📅 Delivery Calendar Matrix (<?= date('F Y', mktime(0, 0, 0, (int)$invoice['billing_month'], 10, (int)$invoice['billing_year'])) ?>)</span>
+                </h3>
+                <p class="text-xs text-slate-500 mt-0.5">
+                    Day-by-day calendar matrix with exact milk quantity marked for every date of the billing month.
+                </p>
+            </div>
 
-        <?php $itemized = $breakdown['itemized_deliveries'] ?? []; ?>
-        <?php if (empty($itemized)): ?>
-            <div class="p-6 text-center text-xs text-slate-500 italic">No delivery records logged in this month.</div>
-        <?php else: ?>
+            <!-- Legend -->
+            <div class="flex items-center gap-2 text-xs flex-wrap">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[11px]">
+                    <span class="w-2 h-2 rounded-full bg-emerald-600"></span> Delivered
+                </span>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 font-bold text-[11px]">
+                    <span class="w-2 h-2 rounded-full bg-rose-500"></span> Skipped / Missed
+                </span>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[11px]">
+                    <span class="w-2 h-2 rounded-full bg-slate-500"></span> Leave (0L)
+                </span>
+            </div>
+        </div>
+
+        <?php
+        $matrix = $breakdown['calendar_matrix'] ?? [];
+        $firstDayOfWeek = (int)($breakdown['first_day_of_week'] ?? 1);
+        $daysInMonth = (int)($breakdown['days_in_month'] ?? count($matrix));
+        ?>
+
+        <?php if (!empty($matrix)): ?>
+            <!-- 7-Column Calendar Grid -->
             <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
-                    <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[10px]">
-                        <tr>
-                            <th class="p-2.5">Date</th>
-                            <th class="p-2.5">Shift</th>
-                            <th class="p-2.5">Status</th>
-                            <th class="p-2.5 text-right">Delivered Qty</th>
-                            <th class="p-2.5 text-right">Rate</th>
-                            <th class="p-2.5 text-right">Line Amount</th>
-                            <th class="p-2.5">Notes</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        <?php foreach ($itemized as $it): ?>
-                            <tr class="hover:bg-slate-50 transition <?= $it['status'] === 'skipped' ? 'bg-rose-50/40' : ($it['status'] === 'leave' ? 'bg-slate-50' : '') ?>">
-                                <td class="p-2.5 font-bold font-mono"><?= formatDate($it['date'], 'd M Y') ?></td>
-                                <td class="p-2.5 capitalize font-medium"><?= e($it['shift']) ?></td>
-                                <td class="p-2.5">
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase <?= $it['status'] === 'delivered' ? 'bg-emerald-100 text-emerald-800' : ($it['status'] === 'skipped' ? 'bg-rose-100 text-rose-800' : 'bg-slate-200 text-slate-700') ?>">
-                                        <?= e($it['status']) ?>
+                <div class="min-w-[640px]">
+                    <!-- Weekday Header -->
+                    <div class="grid grid-cols-7 gap-2 text-center text-xs font-black uppercase tracking-wider text-slate-500 mb-2">
+                        <div class="p-2 bg-slate-100 rounded-xl">Mon</div>
+                        <div class="p-2 bg-slate-100 rounded-xl">Tue</div>
+                        <div class="p-2 bg-slate-100 rounded-xl">Wed</div>
+                        <div class="p-2 bg-slate-100 rounded-xl">Thu</div>
+                        <div class="p-2 bg-slate-100 rounded-xl">Fri</div>
+                        <div class="p-2 bg-slate-100 text-amber-700 rounded-xl">Sat</div>
+                        <div class="p-2 bg-slate-100 text-rose-700 rounded-xl">Sun</div>
+                    </div>
+
+                    <!-- Day Cells -->
+                    <div class="grid grid-cols-7 gap-2">
+                        <?php 
+                        // Empty cells before first day of month
+                        for ($pad = 1; $pad < $firstDayOfWeek; $pad++): 
+                        ?>
+                            <div class="p-2 min-h-[72px] rounded-2xl bg-slate-50/50 border border-dashed border-slate-200/60"></div>
+                        <?php endfor; ?>
+
+                        <?php foreach ($matrix as $d => $cell): ?>
+                            <?php
+                            $st = $cell['status'] ?? 'unrecorded';
+                            $qty = (float)($cell['quantity'] ?? 0);
+                            $isWeekend = !empty($cell['is_weekend']);
+                            
+                            $cellBg = match($st) {
+                                'delivered' => 'bg-emerald-50/70 border-emerald-300 hover:bg-emerald-100/60',
+                                'skipped' => 'bg-rose-50/70 border-rose-300 hover:bg-rose-100/60',
+                                'leave' => 'bg-slate-100 border-slate-300 hover:bg-slate-200/60',
+                                default => 'bg-white border-slate-200',
+                            };
+                            ?>
+                            <div class="p-2.5 min-h-[72px] rounded-2xl border transition flex flex-col justify-between <?= $cellBg ?>">
+                                <div class="flex items-center justify-between text-xs">
+                                    <span class="font-black <?= $isWeekend ? 'text-amber-800' : 'text-slate-700' ?>">
+                                        <?= $d ?>
                                     </span>
-                                </td>
-                                <td class="p-2.5 text-right font-black"><?= number_format((float)$it['quantity'], 1) ?> L</td>
-                                <td class="p-2.5 text-right text-slate-500"><?= formatMoney($breakdown['customer_rate'] ?? 65.00) ?></td>
-                                <td class="p-2.5 text-right font-black <?= (float)$it['amount'] > 0 ? 'text-slate-900' : 'text-slate-400' ?>">
-                                    <?= formatMoney($it['amount']) ?>
-                                </td>
-                                <td class="p-2.5 italic text-slate-400"><?= e($it['notes']) ?></td>
-                            </tr>
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase">
+                                        <?= $cell['day_name'] ?? '' ?>
+                                    </span>
+                                </div>
+
+                                <div class="my-1 text-center">
+                                    <?php if ($st === 'delivered'): ?>
+                                        <div class="font-black text-sm text-emerald-800">
+                                            <?= number_format($qty, 1) ?><span class="text-[10px] font-bold ml-0.5">L</span>
+                                        </div>
+                                    <?php elseif ($st === 'skipped'): ?>
+                                        <div class="text-[11px] font-black text-rose-700">
+                                            0.0 L
+                                        </div>
+                                        <div class="text-[9px] font-bold text-rose-600 uppercase">Skipped</div>
+                                    <?php elseif ($st === 'leave'): ?>
+                                        <div class="text-[11px] font-black text-slate-600">
+                                            0.0 L
+                                        </div>
+                                        <div class="text-[9px] font-bold text-slate-500 uppercase">Leave</div>
+                                    <?php else: ?>
+                                        <div class="text-xs text-slate-300 font-bold">-</div>
+                                    <?php endif; ?>
+                                </div>
+
+                                <?php if (!empty($cell['notes'])): ?>
+                                    <div class="text-[9px] text-slate-500 truncate text-center" title="<?= e($cell['notes']) ?>">
+                                        <?= e($cell['notes']) ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
                         <?php endforeach; ?>
-                    </tbody>
-                </table>
+                    </div>
+                </div>
             </div>
         <?php endif; ?>
+
+        <!-- Detailed Itemized Delivery Table -->
+        <div class="pt-4 border-t border-slate-100">
+            <h4 class="text-xs font-black uppercase tracking-wider text-slate-600 mb-3">Itemized Audit Log (Shift Breakdown)</h4>
+            <?php $itemized = $breakdown['itemized_deliveries'] ?? []; ?>
+            <?php if (empty($itemized)): ?>
+                <div class="p-6 text-center text-xs text-slate-500 italic bg-slate-50 rounded-2xl">No delivery records logged in this month.</div>
+            <?php else: ?>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
+                        <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase text-[10px]">
+                            <tr>
+                                <th class="p-2.5">Date</th>
+                                <th class="p-2.5">Shift</th>
+                                <th class="p-2.5">Status</th>
+                                <th class="p-2.5 text-right">Delivered Qty</th>
+                                <th class="p-2.5 text-right">Rate</th>
+                                <th class="p-2.5 text-right">Line Amount</th>
+                                <th class="p-2.5">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <?php foreach ($itemized as $it): ?>
+                                <tr class="hover:bg-slate-50 transition <?= $it['status'] === 'skipped' ? 'bg-rose-50/40' : ($it['status'] === 'leave' ? 'bg-slate-50' : '') ?>">
+                                    <td class="p-2.5 font-bold font-mono"><?= formatDate($it['date'], 'd M Y') ?></td>
+                                    <td class="p-2.5 capitalize font-medium"><?= e($it['shift']) ?></td>
+                                    <td class="p-2.5">
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase <?= $it['status'] === 'delivered' ? 'bg-emerald-100 text-emerald-800' : ($it['status'] === 'skipped' ? 'bg-rose-100 text-rose-800' : 'bg-slate-200 text-slate-700') ?>">
+                                            <?= e($it['status']) ?>
+                                        </span>
+                                    </td>
+                                    <td class="p-2.5 text-right font-black"><?= number_format((float)$it['quantity'], 1) ?> L</td>
+                                    <td class="p-2.5 text-right text-slate-500"><?= formatMoney($breakdown['customer_rate'] ?? 65.00) ?></td>
+                                    <td class="p-2.5 text-right font-black <?= (float)$it['amount'] > 0 ? 'text-slate-900' : 'text-slate-400' ?>">
+                                        <?= formatMoney($it['amount']) ?>
+                                    </td>
+                                    <td class="p-2.5 italic text-slate-400"><?= e($it['notes']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </div>
     </div>
 
     <!-- Payments Ledger Card -->

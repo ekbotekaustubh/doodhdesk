@@ -5,9 +5,12 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS invoices;
+DROP TABLE IF EXISTS daily_delivery_items;
 DROP TABLE IF EXISTS daily_deliveries;
+DROP TABLE IF EXISTS customer_subscriptions;
 DROP TABLE IF EXISTS customer_leaves;
 DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS tenant_subscriptions;
 DROP TABLE IF EXISTS tenant_additional_charges;
 DROP TABLE IF EXISTS tenant_settings;
@@ -88,6 +91,22 @@ CREATE TABLE tenant_subscriptions (
     INDEX idx_tenant_sub (tenant_id, payment_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 6b. Tenant Product Catalog (Approach A: Normalized Multi-Product Architecture)
+CREATE TABLE products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    code VARCHAR(50) NOT NULL,
+    unit VARCHAR(20) NOT NULL DEFAULT 'L',
+    default_rate DECIMAL(10, 2) NOT NULL DEFAULT 60.00,
+    is_active TINYINT(1) DEFAULT 1,
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_tenant_product_code (tenant_id, code),
+    INDEX idx_tenant_product (tenant_id, is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 7. Customers
 CREATE TABLE customers (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -96,6 +115,7 @@ CREATE TABLE customers (
     phone VARCHAR(20) NOT NULL,
     address TEXT,
     route_name VARCHAR(50) DEFAULT 'Main Route',
+    milk_types VARCHAR(100) DEFAULT 'cow',
     default_quantity DECIMAL(6, 2) NOT NULL DEFAULT 1.00,
     rate_per_unit DECIMAL(10, 2) NOT NULL,
     status ENUM('active', 'inactive') DEFAULT 'active',
@@ -103,6 +123,25 @@ CREATE TABLE customers (
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     INDEX idx_tenant_customer (tenant_id, status),
     INDEX idx_tenant_route (tenant_id, route_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 7b. Customer Product Subscriptions (Approach A: Independent Quantities & Rates per Product)
+CREATE TABLE customer_subscriptions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    customer_id INT NOT NULL,
+    product_id INT NOT NULL,
+    default_quantity DECIMAL(6, 2) NOT NULL DEFAULT 1.00,
+    custom_rate DECIMAL(10, 2) NULL,
+    shift ENUM('morning', 'evening', 'both') DEFAULT 'both',
+    is_active TINYINT(1) DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_customer_product_shift (customer_id, product_id, shift),
+    INDEX idx_tenant_cust_sub (tenant_id, customer_id, is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 8. Customer Leaves / Vacations
@@ -135,6 +174,24 @@ CREATE TABLE daily_deliveries (
     UNIQUE KEY uq_delivery (tenant_id, customer_id, delivery_date, shift),
     INDEX idx_delivery_date (tenant_id, delivery_date),
     INDEX idx_delivery_shift (tenant_id, delivery_date, shift)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 9b. Daily Delivery Line Items (Approach A: Product-wise delivery tracking)
+CREATE TABLE daily_delivery_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    delivery_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity DECIMAL(6, 2) NOT NULL DEFAULT 0.00,
+    unit_price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    status ENUM('delivered', 'skipped', 'leave') NOT NULL DEFAULT 'delivered',
+    notes VARCHAR(255) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (delivery_id) REFERENCES daily_deliveries(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_delivery_product (delivery_id, product_id),
+    INDEX idx_delivery_items (tenant_id, delivery_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 10. Invoices

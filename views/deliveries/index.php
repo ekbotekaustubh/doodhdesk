@@ -103,7 +103,14 @@
     <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm text-center">
         <div class="p-2 rounded-xl bg-blue-50/60 border border-blue-100">
             <div class="text-[10px] font-bold uppercase text-slate-500">Delivered Volume</div>
-            <div class="text-xl font-black text-blue-700"><?= number_format($runSheet['stats']['total_liters'], 1) ?> <span class="text-xs">L</span></div>
+            <div class="text-xl font-black text-blue-700"><?= number_format($runSheet['stats']['total_liters'], 1) ?> <span class="text-xs">Units</span></div>
+            <?php if (!empty($runSheet['stats']['product_totals'])): ?>
+                <div class="text-[10px] text-blue-800 font-bold mt-0.5 space-x-1.5 flex justify-center flex-wrap">
+                    <?php foreach ($runSheet['stats']['product_totals'] as $pName => $pData): ?>
+                        <span><?= e($pName) ?>: <?= number_format($pData['quantity'], 1) ?><?= e($pData['unit']) ?></span>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </div>
         <div class="p-2 rounded-xl bg-emerald-50/60 border border-emerald-100">
             <div class="text-[10px] font-bold uppercase text-emerald-700">Delivered</div>

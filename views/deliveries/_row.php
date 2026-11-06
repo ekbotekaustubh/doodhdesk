@@ -39,6 +39,7 @@ $customerId = (int)$item['customer_id'];
                 <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
                     <?= e($item['route_name']) ?>
                 </span>
+                <?= formatMilkTypesBadge($item['milk_types'] ?? 'cow') ?>
                 <?php if ($isOnLeave): ?>
                     <span class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 font-bold border border-slate-300">
                         🏖 Vacation Active
@@ -50,10 +51,24 @@ $customerId = (int)$item['customer_id'];
                 <?= e($item['address']) ?> • <a href="tel:<?= e($item['phone']) ?>" class="text-blue-600 font-mono hover:underline"><?= e($item['phone']) ?></a>
             </p>
 
-            <div class="text-xs text-slate-600 mt-1 flex items-center gap-2">
-                <span>Default: <strong class="text-slate-800"><?= number_format($defaultQty, 1) ?> L</strong></span>
-                <span>•</span>
-                <span>Rate: <strong class="text-slate-800"><?= formatMoney($item['rate_per_unit']) ?>/L</strong></span>
+            <div class="text-xs text-slate-600 mt-1 flex items-center gap-2 flex-wrap">
+                <?php if (!empty($item['products'])): ?>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <?php foreach ($item['products'] as $p): ?>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 text-[11px] font-bold border border-slate-200">
+                                <span><?= $p['code'] === 'buffalo' ? '🐃' : ($p['code'] === 'cow' ? '🐄' : ($p['code'] === 'paneer' ? '🧀' : '🥛')) ?></span>
+                                <span><?= e($p['name']) ?>:</span>
+                                <strong class="text-slate-900"><?= number_format((float)$p['quantity'], 1) ?> <?= e($p['unit']) ?></strong>
+                                <span class="text-slate-400 font-normal">(@ <?= formatMoney($p['unit_price']) ?>)</span>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <span>Default: <strong class="text-slate-800"><?= number_format($defaultQty, 1) ?> L</strong></span>
+                    <span>•</span>
+                    <span>Rate: <strong class="text-slate-800"><?= formatMoney($item['rate_per_unit']) ?>/L</strong></span>
+                <?php endif; ?>
+
                 <?php if (!empty($item['notes'])): ?>
                     <span>•</span>
                     <span class="italic text-slate-500 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
@@ -120,9 +135,9 @@ $customerId = (int)$item['customer_id'];
                 </button>
 
                 <!-- Inline Quantity Adjustment Popover -->
-                <div x-show="openQty" @click.away="openQty = false" x-cloak class="absolute right-0 bottom-full mb-2 w-72 bg-white rounded-2xl shadow-2xl border-2 border-blue-500 p-4 z-50 text-left">
+                <div x-show="openQty" @click.away="openQty = false" x-cloak class="absolute right-0 bottom-full mb-2 w-80 bg-white rounded-2xl shadow-2xl border-2 border-blue-500 p-4 z-50 text-left">
                     <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
-                        <span class="text-xs font-black text-slate-900">Adjust Milk Qty (Liters)</span>
+                        <span class="text-xs font-black text-slate-900">Adjust Delivery Quantities</span>
                         <button @click="openQty = false" type="button" class="text-slate-400 hover:text-slate-700 font-bold text-sm">✕</button>
                     </div>
 
@@ -132,20 +147,48 @@ $customerId = (int)$item['customer_id'];
                         <input type="hidden" name="date" value="<?= e($date) ?>">
                         <input type="hidden" name="shift" value="<?= e($shift) ?>">
 
-                        <!-- Quick Increment/Decrement Buttons -->
-                        <div class="flex items-center justify-center gap-3 mb-3">
-                            <button type="button" @click="qty = Math.max(0, (parseFloat(qty) - 0.5)).toFixed(1)" class="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-lg border border-slate-300 flex items-center justify-center">
-                                -0.5
-                            </button>
-                            <input type="number" step="0.25" min="0" max="100" name="quantity" x-model="qty" class="w-24 text-center font-black text-xl py-1.5 border-2 border-blue-400 rounded-xl focus:ring-2 focus:ring-blue-500">
-                            <button type="button" @click="qty = (parseFloat(qty) + 0.5).toFixed(1)" class="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-lg border border-slate-300 flex items-center justify-center">
-                                +0.5
-                            </button>
-                        </div>
+                        <?php if (!empty($item['products'])): ?>
+                            <div class="space-y-3 mb-3">
+                                <?php foreach ($item['products'] as $idx => $p): ?>
+                                    <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200" x-data="{ pqty: '<?= (float)$p['quantity'] ?>' }">
+                                        <div class="flex justify-between items-center mb-1.5">
+                                            <span class="text-xs font-black text-slate-800 flex items-center gap-1">
+                                                <span><?= $p['code'] === 'buffalo' ? '🐃' : ($p['code'] === 'cow' ? '🐄' : ($p['code'] === 'paneer' ? '🧀' : '🥛')) ?></span>
+                                                <span><?= e($p['name']) ?></span>
+                                            </span>
+                                            <span class="text-[10px] text-slate-500 font-bold"><?= formatMoney($p['unit_price']) ?>/<?= e($p['unit']) ?></span>
+                                        </div>
+                                        <div class="flex items-center justify-between gap-2">
+                                            <button type="button" @click="pqty = Math.max(0, (parseFloat(pqty) - 0.5)).toFixed(1)" class="w-8 h-8 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 font-black text-sm">
+                                                -0.5
+                                            </button>
+                                            <div class="flex items-center gap-1">
+                                                <input type="number" step="0.25" min="0" max="100" name="product_items[<?= (int)$p['product_id'] ?>]" x-model="pqty" class="w-20 text-center font-black text-base py-1 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                                <span class="text-xs font-bold text-slate-500"><?= e($p['unit']) ?></span>
+                                            </div>
+                                            <button type="button" @click="pqty = (parseFloat(pqty) + 0.5).toFixed(1)" class="w-8 h-8 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 font-black text-sm">
+                                                +0.5
+                                            </button>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <!-- Single/Legacy Quick Increment/Decrement Buttons -->
+                            <div class="flex items-center justify-center gap-3 mb-3">
+                                <button type="button" @click="qty = Math.max(0, (parseFloat(qty) - 0.5)).toFixed(1)" class="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-lg border border-slate-300 flex items-center justify-center">
+                                    -0.5
+                                </button>
+                                <input type="number" step="0.25" min="0" max="100" name="quantity" x-model="qty" class="w-24 text-center font-black text-xl py-1.5 border-2 border-blue-400 rounded-xl focus:ring-2 focus:ring-blue-500">
+                                <button type="button" @click="qty = (parseFloat(qty) + 0.5).toFixed(1)" class="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-lg border border-slate-300 flex items-center justify-center">
+                                    +0.5
+                                </button>
+                            </div>
+                        <?php endif; ?>
 
                         <!-- Optional Note -->
                         <div class="mb-3">
-                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Reason / Note (e.g. Extra 1L for festival)</label>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Reason / Note (e.g. Extra milk for guests)</label>
                             <input type="text" name="notes" x-model="note" placeholder="Reason for change..." class="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg">
                         </div>
 

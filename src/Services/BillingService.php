@@ -35,10 +35,22 @@ final class BillingService
 
         // Fetch all delivery records for this customer in the month
         $deliveries = $this->db->fetchAll(
-            "SELECT delivery_date, shift, quantity, status, notes
+            "SELECT id, delivery_date, shift, quantity, status, notes
              FROM daily_deliveries
              WHERE tenant_id = ? AND customer_id = ? AND delivery_date BETWEEN ? AND ?
              ORDER BY delivery_date ASC, shift ASC",
+            [$tenantId, $customerId, $startDate, $endDate]
+        );
+
+        // Fetch detailed product delivery items if available (Approach A)
+        $deliveryItems = $this->db->fetchAll(
+            "SELECT ddi.*, dd.delivery_date, dd.shift, dd.status as delivery_status, 
+                    p.name as product_name, p.code as product_code, p.unit
+             FROM daily_delivery_items ddi
+             JOIN daily_deliveries dd ON dd.id = ddi.delivery_id
+             JOIN products p ON p.id = ddi.product_id
+             WHERE ddi.tenant_id = ? AND dd.customer_id = ? AND dd.delivery_date BETWEEN ? AND ?
+             ORDER BY dd.delivery_date ASC, dd.shift ASC, p.sort_order ASC",
             [$tenantId, $customerId, $startDate, $endDate]
         );
 
@@ -77,8 +89,49 @@ final class BillingService
 
         $distinctDeliveredDays = count($deliveredDaysSet);
 
-        // 1. Base Milk Subtotal = sum(Actual Delivered Liters * Customer Rate)
-        $milkSubtotal = round($totalUnits * $customerRate, 2);
+        // 1. Base Product / Milk Subtotal
+        $productSummaries = [];
+        if (!empty($deliveryItems)) {
+            $calculatedSubtotal = 0.0;
+            foreach ($deliveryItems as $di) {
+                $pId = (int)$di['product_id'];
+                $pQty = (float)$di['quantity'];
+                $pRate = (float)$di['unit_price'];
+                $pStatus = $di['status'];
+
+                if (!isset($productSummaries[$pId])) {
+                    $productSummaries[$pId] = [
+                        'product_id' => $pId,
+                        'name' => (string)$di['product_name'],
+                        'code' => (string)$di['product_code'],
+                        'unit' => (string)$di['unit'],
+                        'unit_price' => $pRate,
+                        'total_units' => 0.0,
+                        'subtotal' => 0.0,
+                    ];
+                }
+
+                if ($pStatus === 'delivered') {
+                    $productSummaries[$pId]['total_units'] += $pQty;
+                    $lineAmt = round($pQty * $pRate, 2);
+                    $productSummaries[$pId]['subtotal'] += $lineAmt;
+                    $calculatedSubtotal += $lineAmt;
+                }
+            }
+            $milkSubtotal = round($calculatedSubtotal, 2);
+        } else {
+            // Fallback for single-rate legacy deliveries
+            $milkSubtotal = round($totalUnits * $customerRate, 2);
+            $productSummaries[] = [
+                'product_id' => 1,
+                'name' => 'Farm Fresh Milk',
+                'code' => 'milk',
+                'unit' => 'L',
+                'unit_price' => $customerRate,
+                'total_units' => $totalUnits,
+                'subtotal' => $milkSubtotal,
+            ];
+        }
 
         // 2. Additional Charges from tenant_additional_charges (Active custom charges)
         $activeCharges = $this->db->fetchAll(
@@ -192,6 +245,11 @@ final class BillingService
             $paymentStatus = 'partial';
         }
 
+        $matrixData = buildCalendarMatrix([
+            'itemized_deliveries' => $itemizedDeliveries,
+            'days_in_month' => $daysInMonth,
+        ], $year, $month);
+
         return [
             'tenant_id' => $tenantId,
             'customer_id' => $customerId,
@@ -209,6 +267,7 @@ final class BillingService
             'total_units' => round($totalUnits, 2),
             'customer_rate' => $customerRate,
             'milk_subtotal' => $milkSubtotal,
+            'products' => array_values($productSummaries),
             'charges' => $chargeLineItems,
             'additional_charges_total' => $additionalChargesTotal,
             'taxable_charges_total' => $taxableChargesTotal,
@@ -223,6 +282,8 @@ final class BillingService
             'final_amount' => $totalPayable,
             'payment_status' => $paymentStatus,
             'itemized_deliveries' => $itemizedDeliveries,
+            'calendar_matrix' => $matrixData['matrix'],
+            'first_day_of_week' => $matrixData['first_day_of_week'],
             'tenant_settings' => $tenantSettings,
         ];
     }

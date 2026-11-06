@@ -46,6 +46,7 @@ $widthClass = $format === '58mm' ? 'max-w-[240px]' : 'max-w-[320px]';
         <div class="pt-1 font-bold">Customer: <?= e($invoice['customer_name']) ?></div>
         <div class="truncate">Phone: <?= e($invoice['customer_phone']) ?></div>
         <div class="truncate text-[10px]">Route: <?= e($invoice['route_name'] ?? 'Main') ?></div>
+        <div class="truncate text-[10px] font-bold">Milk: <?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?></div>
     </div>
 
     <!-- Delivery Tracking Summary (Anti-Error Assurance) -->
@@ -65,15 +66,43 @@ $widthClass = $format === '58mm' ? 'max-w-[240px]' : 'max-w-[320px]';
         </div>
     </div>
 
+    <!-- Daily Milk Matrix on Thermal Receipt -->
+    <?php if (!empty($breakdown['calendar_matrix'])): ?>
+        <div class="py-2 border-b border-dashed border-black space-y-1 text-[9px]">
+            <div class="font-bold uppercase tracking-wider text-[10px]">Daily Milk Matrix (Date: Qty)</div>
+            <div class="grid grid-cols-4 gap-1 text-center font-mono">
+                <?php foreach ($breakdown['calendar_matrix'] as $dNum => $dInfo): ?>
+                    <div class="p-0.5 border border-dotted border-black rounded <?= $dInfo['status'] === 'delivered' ? 'bg-slate-100 font-bold' : ($dInfo['status'] === 'skipped' ? 'text-slate-500' : 'text-slate-400') ?>">
+                        <span><?= $dNum ?>:</span>
+                        <span><?= $dInfo['status'] === 'delivered' ? (float)$dInfo['quantity'] . 'L' : ($dInfo['status'] === 'skipped' ? 'Skip' : ($dInfo['status'] === 'leave' ? 'Lv' : '-')) ?></span>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- Charges Breakdown -->
     <div class="py-2 border-b border-dashed border-black space-y-1">
-        <div class="flex justify-between">
-            <div>
-                <div class="font-bold">Pure Milk Total</div>
-                <div class="text-[9px]"><?= number_format((float)$invoice['total_units'], 1) ?>L @ <?= formatMoney($breakdown['customer_rate'] ?? 65) ?>/L</div>
+        <!-- Products / Milk Subtotal -->
+        <?php if (!empty($breakdown['products'])): ?>
+            <?php foreach ($breakdown['products'] as $prod): ?>
+                <div class="flex justify-between pb-1 border-b border-dotted border-slate-200">
+                    <div>
+                        <div class="font-bold"><?= e($prod['name']) ?></div>
+                        <div class="text-[9px]"><?= number_format((float)$prod['total_units'], 1) ?> <?= e($prod['unit']) ?> @ <?= formatMoney($prod['unit_price']) ?>/<?= e($prod['unit']) ?></div>
+                    </div>
+                    <div class="font-bold"><?= formatMoney($prod['subtotal']) ?></div>
+                </div>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <div class="flex justify-between">
+                <div>
+                    <div class="font-bold"><?= formatMilkTypeText($invoice['milk_types'] ?? ($breakdown['customer']['milk_types'] ?? 'cow')) ?> Total</div>
+                    <div class="text-[9px]"><?= number_format((float)$invoice['total_units'], 1) ?>L @ <?= formatMoney($breakdown['customer_rate'] ?? 65) ?>/L</div>
+                </div>
+                <div class="font-bold"><?= formatMoney($invoice['milk_subtotal']) ?></div>
             </div>
-            <div class="font-bold"><?= formatMoney($invoice['milk_subtotal']) ?></div>
-        </div>
+        <?php endif; ?>
 
         <!-- Custom Surcharges -->
         <?php if (!empty($breakdown['charges'])): ?>

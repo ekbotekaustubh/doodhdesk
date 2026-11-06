@@ -200,6 +200,393 @@ runTest("Super Admin Global Platform Settings (system_settings)", function() use
     }
 }, $passed, $failed);
 
+// TEST 7: Customer Milk Type Multiselect (Cow, Buffalo, and Both)
+runTest("Customer Milk Type Multiselect: Cow Milk, Buffalo Milk, and Both", function() use ($db) {
+    // 1. Verify Enum
+    if (\App\Enums\MilkType::Cow->value !== 'cow' || \App\Enums\MilkType::Buffalo->value !== 'buffalo') {
+        throw new \Exception("MilkType enum values mismatch");
+    }
+
+    // 2. Insert customer with Cow milk only
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
+                  VALUES (1, 'Test Cow Only', '9999911111', 'Block A', 'Test Route', 'cow', 1.0, 60.0, 'active')");
+    $c1 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9999911111'");
+    if (!$c1 || $c1['milk_types'] !== 'cow') {
+        throw new \Exception("Expected milk_types 'cow', got: " . ($c1['milk_types'] ?? 'null'));
+    }
+    $types1 = parseMilkTypes($c1['milk_types']);
+    if ($types1 !== ['cow']) {
+        throw new \Exception("parseMilkTypes mismatch for cow: " . json_encode($types1));
+    }
+
+    // 3. Insert customer with Buffalo milk only
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
+                  VALUES (1, 'Test Buffalo Only', '9999922222', 'Block B', 'Test Route', 'buffalo', 1.5, 75.0, 'active')");
+    $c2 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9999922222'");
+    if (!$c2 || $c2['milk_types'] !== 'buffalo') {
+        throw new \Exception("Expected milk_types 'buffalo', got: " . ($c2['milk_types'] ?? 'null'));
+    }
+    $types2 = parseMilkTypes($c2['milk_types']);
+    if ($types2 !== ['buffalo']) {
+        throw new \Exception("parseMilkTypes mismatch for buffalo: " . json_encode($types2));
+    }
+
+    // 4. Insert customer with BOTH Cow and Buffalo (Multiselect)
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
+                  VALUES (1, 'Test Both Milks', '9999933333', 'Block C', 'Test Route', 'cow,buffalo', 2.0, 70.0, 'active')");
+    $c3 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9999933333'");
+    if (!$c3 || $c3['milk_types'] !== 'cow,buffalo') {
+        throw new \Exception("Expected milk_types 'cow,buffalo', got: " . ($c3['milk_types'] ?? 'null'));
+    }
+    $types3 = parseMilkTypes($c3['milk_types']);
+    if (count($types3) !== 2 || !in_array('cow', $types3) || !in_array('buffalo', $types3)) {
+        throw new \Exception("parseMilkTypes mismatch for both: " . json_encode($types3));
+    }
+
+    // 5. Update customer from single milk to both milks
+    $db->execute("UPDATE customers SET milk_types = ? WHERE id = ?", ['cow,buffalo', $c1['id']]);
+    $c1Updated = $db->fetchOne("SELECT * FROM customers WHERE id = ?", [$c1['id']]);
+    if ($c1Updated['milk_types'] !== 'cow,buffalo') {
+        throw new \Exception("Updating customer milk types failed!");
+    }
+
+    // Clean up test rows
+    $db->execute("DELETE FROM customers WHERE phone IN ('9999911111', '9999922222', '9999933333')");
+}, $passed, $failed);
+
+// TEST 8: Delivery Calendar Matrix & Milk Type on Invoices
+runTest("Delivery Calendar Matrix & Milk Type on Invoices", function() use ($db, $billingService) {
+    // 1. Check helper milk text formatting
+    if (formatMilkTypeText('cow') !== 'Cow Milk') {
+        throw new \Exception("formatMilkTypeText('cow') failed");
+    }
+    if (formatMilkTypeText('buffalo') !== 'Buffalo Milk') {
+        throw new \Exception("formatMilkTypeText('buffalo') failed");
+    }
+    if (formatMilkTypeText('cow,buffalo') !== 'Cow Milk & Buffalo Milk') {
+        throw new \Exception("formatMilkTypeText('cow,buffalo') failed: " . formatMilkTypeText('cow,buffalo'));
+    }
+
+    // 2. Test buildCalendarMatrix for October (31 days)
+    $sampleItemized = [
+        ['date' => '2026-10-01', 'shift' => 'morning', 'status' => 'delivered', 'quantity' => 2.0, 'notes' => ''],
+        ['date' => '2026-10-02', 'shift' => 'morning', 'status' => 'skipped', 'quantity' => 0.0, 'notes' => 'Door locked'],
+        ['date' => '2026-10-03', 'shift' => 'morning', 'status' => 'leave', 'quantity' => 0.0, 'notes' => 'Out of town'],
+        ['date' => '2026-10-04', 'shift' => 'morning', 'status' => 'delivered', 'quantity' => 1.5, 'notes' => ''],
+        ['date' => '2026-10-04', 'shift' => 'evening', 'status' => 'delivered', 'quantity' => 1.0, 'notes' => ''],
+    ];
+
+    $matrixData = buildCalendarMatrix([
+        'itemized_deliveries' => $sampleItemized,
+        'days_in_month' => 31,
+    ], 2026, 10);
+
+    if ($matrixData['days_in_month'] !== 31) {
+        throw new \Exception("Expected 31 days in October, got " . $matrixData['days_in_month']);
+    }
+    if (count($matrixData['matrix']) !== 31) {
+        throw new \Exception("Expected 31 matrix cells, got " . count($matrixData['matrix']));
+    }
+
+    // Oct 1 was Thursday (day_of_week = 4)
+    if ($matrixData['first_day_of_week'] !== 4) {
+        throw new \Exception("Expected first day of week 4 (Thu), got " . $matrixData['first_day_of_week']);
+    }
+
+    // Day 1: Delivered 2.0L
+    $day1 = $matrixData['matrix'][1];
+    if ($day1['status'] !== 'delivered' || (float)$day1['quantity'] !== 2.0) {
+        throw new \Exception("Day 1 mismatch: status={$day1['status']}, qty={$day1['quantity']}");
+    }
+
+    // Day 2: Skipped 0.0L
+    $day2 = $matrixData['matrix'][2];
+    if ($day2['status'] !== 'skipped' || (float)$day2['quantity'] !== 0.0) {
+        throw new \Exception("Day 2 mismatch: status={$day2['status']}, qty={$day2['quantity']}");
+    }
+
+    // Day 3: Leave 0.0L
+    $day3 = $matrixData['matrix'][3];
+    if ($day3['status'] !== 'leave' || (float)$day3['quantity'] !== 0.0) {
+        throw new \Exception("Day 3 mismatch: status={$day3['status']}, qty={$day3['quantity']}");
+    }
+
+    // Day 4: Morning 1.5L + Evening 1.0L = 2.5L delivered
+    $day4 = $matrixData['matrix'][4];
+    if ($day4['status'] !== 'delivered' || (float)$day4['quantity'] !== 2.5) {
+        throw new \Exception("Day 4 multi-shift mismatch: status={$day4['status']}, qty={$day4['quantity']}");
+    }
+
+    // 3. Test invoice query joins customer milk_types
+    $inv = $db->fetchOne(
+        "SELECT inv.*, c.name AS customer_name, c.phone AS customer_phone, c.route_name, c.milk_types
+         FROM invoices inv
+         JOIN customers c ON c.id = inv.customer_id
+         WHERE inv.tenant_id = 1
+         LIMIT 1"
+    );
+    if (!$inv) {
+        throw new \Exception("No invoices found for tenant 1");
+    }
+    if (!isset($inv['milk_types'])) {
+        throw new \Exception("Invoice query does not contain milk_types field!");
+    }
+
+    // 4. Test BillingService calculation contains calendar_matrix
+    $bill = $billingService->calculateCustomerBill(1, 1, 2026, 10);
+    if (empty($bill['calendar_matrix']) || count($bill['calendar_matrix']) !== 31) {
+        throw new \Exception("BillingService bill missing 31-day calendar_matrix");
+    }
+}, $passed, $failed);
+
+// TEST 9: Customer CSV Import, Export, and Sample Template
+runTest("Customer CSV Import, Export, and Sample Template", function() use ($db) {
+    // 1. Verify Sample CSV generation
+    $sampleFile = tempnam(sys_get_temp_dir(), "sample_csv_");
+    $fp = fopen($sampleFile, 'w');
+    fputcsv($fp, ['Name', 'Phone', 'Address', 'Route', 'Milk Type', 'Default Quantity', 'Rate Per Unit', 'Status'], ',', '"', "\\");
+    fputcsv($fp, ['Import Test 1', '9666611111', 'Flat 1', 'Route A', 'cow', '1.5', '60.0', 'active'], ',', '"', "\\");
+    fputcsv($fp, ['Import Test 2', '9666622222', 'Flat 2', 'Route B', 'buffalo', '2.0', '70.0', 'active'], ',', '"', "\\");
+    fputcsv($fp, ['Import Test 3', '9666633333', 'Flat 3', 'Route A', 'cow,buffalo', '2.5', '65.0', 'active'], ',', '"', "\\");
+    fclose($fp);
+
+    // 2. Test manual CSV parsing & ingestion logic
+    $handle = fopen($sampleFile, 'r');
+    $header = fgetcsv($handle, null, ',', '"', "\\");
+    if (!in_array('Name', $header) || !in_array('Phone', $header) || !in_array('Milk Type', $header)) {
+        throw new \Exception("Sample CSV missing critical headers");
+    }
+
+    $imported = 0;
+    while (($row = fgetcsv($handle, null, ',', '"', "\\")) !== false) {
+        $name = $row[0];
+        $phone = $row[1];
+        $addr = $row[2];
+        $route = $row[3];
+        $milk = $row[4];
+        $qty = (float)$row[5];
+        $rate = (float)$row[6];
+        $status = $row[7];
+
+        $db->execute(
+            "INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status)
+             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [$name, $phone, $addr, $route, $milk, $qty, $rate, $status]
+        );
+        $imported++;
+    }
+    fclose($handle);
+    @unlink($sampleFile);
+
+    if ($imported !== 3) {
+        throw new \Exception("Expected 3 imported customers, got {$imported}");
+    }
+
+    // Verify imported data in DB
+    $c1 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666611111'");
+    if (!$c1 || $c1['milk_types'] !== 'cow' || (float)$c1['default_quantity'] !== 1.5) {
+        throw new \Exception("Imported customer 1 mismatch");
+    }
+
+    $c2 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666622222'");
+    if (!$c2 || $c2['milk_types'] !== 'buffalo' || (float)$c2['default_quantity'] !== 2.0) {
+        throw new \Exception("Imported customer 2 mismatch");
+    }
+
+    $c3 = $db->fetchOne("SELECT * FROM customers WHERE phone = '9666633333'");
+    if (!$c3 || $c3['milk_types'] !== 'cow,buffalo' || (float)$c3['default_quantity'] !== 2.5) {
+        throw new \Exception("Imported customer 3 mismatch");
+    }
+
+    // 3. Test Export query
+    $exportedRows = $db->fetchAll("SELECT * FROM customers WHERE tenant_id = 1 AND phone LIKE '96666%'");
+    if (count($exportedRows) !== 3) {
+        throw new \Exception("Export rows count mismatch: expected 3, got " . count($exportedRows));
+    }
+
+    // Cleanup
+    $db->execute("DELETE FROM customers WHERE phone LIKE '96666%'");
+}, $passed, $failed);
+
+// TEST 10: Multi-Product Catalog Management (Approach A)
+runTest("Product Catalog: Dynamic Tenant Products with Units & Rates", function() use ($db) {
+    $productService = new \App\Services\ProductService();
+    $tenantId = 1;
+
+    // 1. Ensure default products exist (Cow Milk & Buffalo Milk)
+    $productService->ensureDefaultProducts($tenantId);
+    $products = $productService->getTenantProducts($tenantId);
+    if (count($products) < 2) {
+        throw new \Exception("Default products missing");
+    }
+
+    // 2. Create custom product: Fresh Paneer in kg
+    $pId = $productService->createProduct($tenantId, 'Fresh Paneer', 'paneer', 'kg', 360.00);
+    if ($pId <= 0) {
+        throw new \Exception("Failed to create product");
+    }
+
+    $paneer = $db->fetchOne("SELECT * FROM products WHERE id = ? AND tenant_id = ?", [$pId, $tenantId]);
+    if (!$paneer || $paneer['unit'] !== 'kg' || (float)$paneer['default_rate'] !== 360.00) {
+        throw new \Exception("Product data mismatch for Paneer");
+    }
+}, $passed, $failed);
+
+// TEST 11: Customer Multi-Product Subscriptions (Both Milks & New Products)
+runTest("Customer Subscriptions: Independent Quantities & Rates for Both Milks", function() use ($db) {
+    $productService = new \App\Services\ProductService();
+    $tenantId = 1;
+
+    // Create a customer
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
+                  VALUES (?, 'Dual Milk Test Cust', '9888800001', 'Flat 100', 'Test Route', 'cow,buffalo', 2.5, 60.0, 'active')",
+                  [$tenantId]);
+    $custId = (int)$db->lastInsertId();
+
+    $cowProd = $db->fetchOne("SELECT id FROM products WHERE tenant_id = ? AND code = 'cow'", [$tenantId]);
+    $bufProd = $db->fetchOne("SELECT id FROM products WHERE tenant_id = ? AND code = 'buffalo'", [$tenantId]);
+
+    // Save independent subscriptions: Cow 1.5L @ 60, Buffalo 1.0L @ 75
+    $subscriptions = [
+        ['product_id' => (int)$cowProd['id'], 'quantity' => 1.5, 'custom_rate' => 60.0, 'shift' => 'both', 'is_active' => true],
+        ['product_id' => (int)$bufProd['id'], 'quantity' => 1.0, 'custom_rate' => 75.0, 'shift' => 'both', 'is_active' => true],
+    ];
+    $productService->saveCustomerSubscriptions($tenantId, $custId, $subscriptions);
+
+    // Verify stored subscriptions
+    $stored = $productService->getCustomerSubscriptions($tenantId, $custId);
+    if (count($stored) !== 2) {
+        throw new \Exception("Expected 2 subscriptions, got " . count($stored));
+    }
+
+    $cowSub = null;
+    $bufSub = null;
+    foreach ($stored as $s) {
+        if ($s['product_code'] === 'cow') $cowSub = $s;
+        if ($s['product_code'] === 'buffalo') $bufSub = $s;
+    }
+
+    if (!$cowSub || (float)$cowSub['default_quantity'] !== 1.5 || (float)$cowSub['custom_rate'] !== 60.0) {
+        throw new \Exception("Cow subscription mismatch");
+    }
+    if (!$bufSub || (float)$bufSub['default_quantity'] !== 1.0 || (float)$bufSub['custom_rate'] !== 75.0) {
+        throw new \Exception("Buffalo subscription mismatch");
+    }
+
+    // Verify total default quantity in customer row updated to 2.5L
+    $cust = $db->fetchOne("SELECT default_quantity FROM customers WHERE id = ?", [$custId]);
+    if ((float)$cust['default_quantity'] !== 2.5) {
+        throw new \Exception("Customer default_quantity was not synced to sum (2.5)");
+    }
+
+    // Clean up
+    $db->execute("DELETE FROM customers WHERE id = ?", [$custId]);
+}, $passed, $failed);
+
+// TEST 12: Daily Delivery Itemized Tracking & Zero-Charge Rule
+runTest("Daily Delivery Run-Sheet: Itemized Product Tracking & Zero-Charge Rule", function() use ($db, $deliveryService) {
+    $tenantId = 1;
+    $productService = new \App\Services\ProductService();
+
+    // Create a customer
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
+                  VALUES (?, 'RunSheet Item Test Cust', '9888800002', 'Flat 200', 'Test Route', 'cow,buffalo', 2.0, 60.0, 'active')",
+                  [$tenantId]);
+    $custId = (int)$db->lastInsertId();
+
+    $cowProd = $db->fetchOne("SELECT id FROM products WHERE tenant_id = ? AND code = 'cow'", [$tenantId]);
+    $bufProd = $db->fetchOne("SELECT id FROM products WHERE tenant_id = ? AND code = 'buffalo'", [$tenantId]);
+
+    $subscriptions = [
+        ['product_id' => (int)$cowProd['id'], 'quantity' => 1.5, 'custom_rate' => 60.0, 'shift' => 'both', 'is_active' => true],
+        ['product_id' => (int)$bufProd['id'], 'quantity' => 0.5, 'custom_rate' => 70.0, 'shift' => 'both', 'is_active' => true],
+    ];
+    $productService->saveCustomerSubscriptions($tenantId, $custId, $subscriptions);
+
+    $date = date('Y-m-d');
+
+    // 1. Deliver default: should log 1.5L cow and 0.5L buffalo
+    $deliveryService->recordDelivery($tenantId, $custId, $date, 'morning', 'delivered');
+    $del = $db->fetchOne("SELECT id, quantity FROM daily_deliveries WHERE tenant_id = ? AND customer_id = ? AND delivery_date = ? AND shift = 'morning'", [$tenantId, $custId, $date]);
+    if (!$del || (float)$del['quantity'] !== 2.0) {
+        throw new \Exception("Expected total delivery qty 2.0, got " . ($del['quantity'] ?? 'null'));
+    }
+
+    $items = $db->fetchAll("SELECT * FROM daily_delivery_items WHERE delivery_id = ? ORDER BY product_id ASC", [$del['id']]);
+    if (count($items) !== 2) {
+        throw new \Exception("Expected 2 daily_delivery_items, got " . count($items));
+    }
+
+    // 2. Custom adjustment: Customer asks for extra 0.5L Buffalo milk today (1.5L Cow, 1.0L Buffalo = 2.5L total)
+    $deliveryService->recordDelivery($tenantId, $custId, $date, 'morning', 'delivered', null, 'Extra buffalo milk', [
+        (int)$cowProd['id'] => 1.5,
+        (int)$bufProd['id'] => 1.0,
+    ]);
+
+    $delUpdated = $db->fetchOne("SELECT id, quantity FROM daily_deliveries WHERE id = ?", [$del['id']]);
+    if ((float)$delUpdated['quantity'] !== 2.5) {
+        throw new \Exception("Adjusted delivery total mismatch: expected 2.5, got " . $delUpdated['quantity']);
+    }
+
+    // 3. Zero-Charge Rule on skip: both items must become 0.00
+    $deliveryService->recordDelivery($tenantId, $custId, $date, 'morning', 'skipped');
+    $skipItems = $db->fetchAll("SELECT * FROM daily_delivery_items WHERE delivery_id = ?", [$del['id']]);
+    foreach ($skipItems as $si) {
+        if ((float)$si['quantity'] !== 0.0) {
+            throw new \Exception("Zero-charge rule failed for product " . $si['product_id'] . " on skip!");
+        }
+    }
+
+    // Clean up
+    $db->execute("DELETE FROM customers WHERE id = ?", [$custId]);
+}, $passed, $failed);
+
+// TEST 13: Multi-Product Itemized Billing
+runTest("Multi-Product Invoicing: Itemized Product Subtotals", function() use ($db, $billingService, $deliveryService) {
+    $tenantId = 1;
+    $productService = new \App\Services\ProductService();
+
+    // Create a customer
+    $db->execute("INSERT INTO customers (tenant_id, name, phone, address, route_name, milk_types, default_quantity, rate_per_unit, status) 
+                  VALUES (?, 'Billing Item Test Cust', '9888800003', 'Flat 300', 'Test Route', 'cow,buffalo', 2.0, 60.0, 'active')",
+                  [$tenantId]);
+    $custId = (int)$db->lastInsertId();
+
+    $cowProd = $db->fetchOne("SELECT id FROM products WHERE tenant_id = ? AND code = 'cow'", [$tenantId]);
+    $bufProd = $db->fetchOne("SELECT id FROM products WHERE tenant_id = ? AND code = 'buffalo'", [$tenantId]);
+
+    $subscriptions = [
+        ['product_id' => (int)$cowProd['id'], 'quantity' => 2.0, 'custom_rate' => 60.0, 'shift' => 'both', 'is_active' => true],
+        ['product_id' => (int)$bufProd['id'], 'quantity' => 1.0, 'custom_rate' => 80.0, 'shift' => 'both', 'is_active' => true],
+    ];
+    $productService->saveCustomerSubscriptions($tenantId, $custId, $subscriptions);
+
+    // Record deliveries for test month
+    $year = 2026;
+    $month = 9;
+    // Deliver for 10 days
+    for ($d = 1; $d <= 10; $d++) {
+        $dStr = sprintf('%04d-%02d-%02d', $year, $month, $d);
+        $deliveryService->recordDelivery($tenantId, $custId, $dStr, 'morning', 'delivered');
+    }
+
+    $bill = $billingService->calculateCustomerBill($tenantId, $custId, $year, $month);
+
+    // 10 days * 2L Cow @ 60 = 20L * 60 = 1200
+    // 10 days * 1L Buffalo @ 80 = 10L * 80 = 800
+    // Milk subtotal should be 2000.00
+    if ((float)$bill['milk_subtotal'] !== 2000.00) {
+        throw new \Exception("Expected milk subtotal 2000.00, got " . $bill['milk_subtotal']);
+    }
+
+    if (empty($bill['products']) || count($bill['products']) !== 2) {
+        throw new \Exception("Expected 2 itemized products in bill");
+    }
+
+    // Clean up
+    $db->execute("DELETE FROM customers WHERE id = ?", [$custId]);
+}, $passed, $failed);
+
 echo "\n========================================================\n";
 echo "   TEST RESULTS: {$passed} PASSED, {$failed} FAILED\n";
 echo "========================================================\n";
