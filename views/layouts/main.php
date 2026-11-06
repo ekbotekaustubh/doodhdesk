@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title><?= e($title ?? 'DairyFlow - Multi-Tenant Dairy SaaS') ?></title>
+    <title><?= e($title ?? 'DoodhDesk - Multi-Tenant Dairy SaaS') ?></title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js & HTMX (Local Vendored with CDN Fallback) -->
@@ -50,7 +50,7 @@
                         🥛
                     </span>
                     <div>
-                        <div class="font-black text-slate-900 tracking-tight leading-none text-base sm:text-lg">DairyFlow</div>
+                        <div class="font-black text-slate-900 tracking-tight leading-none text-base sm:text-lg">DoodhDesk</div>
                         <div class="text-[11px] font-semibold text-blue-600 truncate max-w-[140px] sm:max-w-xs">
                             <?= e(\App\Core\Auth::tenant()['business_name'] ?? 'Dairy SaaS') ?>
                         </div>

@@ -1,6 +1,6 @@
-# DairyFlow - Multi-Tenant SaaS Web Application
+# DoodhDesk - Multi-Tenant SaaS Web Application
 
-DairyFlow is a multi-tenant, mobile-first SaaS web application designed for milkmen, dairy farmers, and dairy delivery businesses. It eradicates billing disputes with customers by tracking daily milk deliveries in real-time and excluding missed or paused days from monthly invoices.
+DoodhDesk is a multi-tenant, mobile-first SaaS web application designed for milkmen, dairy farmers, and dairy delivery businesses. It eradicates billing disputes with customers by tracking daily milk deliveries in real-time and excluding missed or paused days from monthly invoices.
 
 ---
 
@@ -63,13 +63,13 @@ Each milkman can configure their own dairy settings:
 ## 3. Demo Credentials & Quick Switcher
 
 Access the application in your browser at:
-**`http://localhost/milkman/`**
+**`http://localhost/doodhdesk/`**
 
 | Portal | Role / Account | Login Credential | Password | Note |
 |---|---|---|---|---|
 | **Milkman Portal (Paid Tier)** | Krishna Pure Milk Dairy | `9876543210` or `ramesh@krishnadairy.com` | `password123` | Paid tier, 105 max capacity, 6 active customers, GST 5%, custom surcharges, generated bills |
 | **Milkman Portal (Free Tier)** | Radha Fresh Cow Dairy | `9876500000` or `suresh@radhadairy.com` | `password123` | Free tier, 4/5 slots used (ready to test Quota Guard & Paywall) |
-| **Super Admin Portal** | SaaS Platform Admin | `admin@dairyflow.com` | `admin123` | Manages global SaaS subscription tiers and tenant quotas |
+| **Super Admin Portal** | SaaS Platform Admin | `admin@doodhdesk.com` | `admin123` | Manages global SaaS subscription tiers and tenant quotas |
 
 > **Note:** A 1-click **Quick Demo Switcher** bar is present at the bottom of the screen for instant previewing across all 3 roles without manual logins.
 
@@ -80,5 +80,5 @@ Access the application in your browser at:
 To verify data isolation, the zero-charge rule, quota guards, and the 4-step billing formula:
 
 ```bash
-/usr/bin/php8.4 /var/www/html/milkman/tests/test_suite.php
+/usr/bin/php8.4 /var/www/html/doodhdesk/tests/test_suite.php
 ```

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// Global Helper Functions for DairyFlow SaaS
+// Global Helper Functions for DoodhDesk SaaS
 
 function e(?string $value): string
 {

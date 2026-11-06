@@ -11,7 +11,7 @@ use App\Services\DeliveryService;
 use App\Services\QuotaService;
 
 echo "========================================================\n";
-echo "   DAIRYFLOW MULTI-TENANT SAAS AUTOMATED TEST SUITE    \n";
+echo "   DOODHDESK MULTI-TENANT SAAS AUTOMATED TEST SUITE    \n";
 echo "========================================================\n\n";
 
 $db = Database::getInstance();

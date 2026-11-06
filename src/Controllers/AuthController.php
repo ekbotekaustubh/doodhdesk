@@ -123,7 +123,7 @@ final class AuthController
             Auth::loginTenant($tenant);
         });
 
-        Auth::flash('success', "Welcome to DairyFlow! Your free account with {$freeLimit} customer slots is ready.");
+        Auth::flash('success', "Welcome to DoodhDesk! Your free account with {$freeLimit} customer slots is ready.");
         Response::redirect(url('/'));
     }
 

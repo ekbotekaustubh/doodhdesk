@@ -492,7 +492,7 @@ $isPdf = !empty($isPdf);
                     </div>
                 <?php endif; ?>
                 <div class="powered-by">
-                    Powered by DairyFlow SaaS • Multi-Tenant Zero-Dispute Invoicing
+                    Powered by DoodhDesk SaaS • Multi-Tenant Zero-Dispute Invoicing
                 </div>
             </td>
             <td style="width: 105px; vertical-align: top; text-align: center;">
@@ -500,7 +500,7 @@ $isPdf = !empty($isPdf);
                 <?= \App\Services\QrCodeService::renderQrTag(
                     $settings['upi_qr_path'] ?? null,
                     $settings['upi_id'] ?? null,
-                    $tenant['business_name'] ?? 'DairyFlow',
+                    $tenant['business_name'] ?? 'DoodhDesk',
                     (float)$invoice['final_amount'],
                     90,
                     "Milk Bill INV-{$invoice['id']}"

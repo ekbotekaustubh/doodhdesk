@@ -1,4 +1,4 @@
--- DairyFlow Multi-Tenant SaaS Database Schema
+-- DoodhDesk Multi-Tenant SaaS Database Schema
 -- Strict Types & Composite Multi-Tenant Indexing
 
 SET FOREIGN_KEY_CHECKS = 0;

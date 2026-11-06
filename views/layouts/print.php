@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= e($title ?? 'Print Document - DairyFlow') ?></title>
+    <title><?= e($title ?? 'Print Document - DoodhDesk') ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @media print {

@@ -18,7 +18,7 @@
 
         <div>
             <label class="block text-xs font-black uppercase text-slate-300 mb-1">Admin Email</label>
-            <input type="email" name="email" required placeholder="admin@dairyflow.com" class="w-full text-sm font-semibold px-4 py-3 bg-slate-900 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-purple-500">
+            <input type="email" name="email" required placeholder="admin@doodhdesk.com" class="w-full text-sm font-semibold px-4 py-3 bg-slate-900 border border-slate-700 text-white rounded-xl focus:ring-2 focus:ring-purple-500">
         </div>
 
         <div>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title><?= e($title ?? 'DairyFlow - Multi-Tenant Dairy SaaS') ?></title>
+    <title><?= e($title ?? 'DoodhDesk - Multi-Tenant Dairy SaaS') ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .tap-target { min-height: 48px; }
@@ -16,7 +16,7 @@
             <div class="w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto text-3xl font-black shadow-xl mb-3">
                 🥛
             </div>
-            <h1 class="text-2xl font-black tracking-tight text-white">DairyFlow SaaS</h1>
+            <h1 class="text-2xl font-black tracking-tight text-white">DoodhDesk SaaS</h1>
             <p class="text-sm text-slate-400 mt-1">Multi-Tenant Milk Delivery & Zero-Dispute Invoicing</p>
         </div>
 

@@ -249,7 +249,7 @@
                 <?= \App\Services\QrCodeService::renderQrTag(
                     $settings['upi_qr_path'] ?? null,
                     $settings['upi_id'] ?? null,
-                    $tenant['business_name'] ?? 'DairyFlow',
+                    $tenant['business_name'] ?? 'DoodhDesk',
                     (float)$invoice['final_amount'],
                     130,
                     "Milk Bill INV-{$invoice['id']}"

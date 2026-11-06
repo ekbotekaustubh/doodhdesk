@@ -62,7 +62,7 @@ final class SuperAdminController
         $unitSize = (int)$request->post('paid_tier_unit_size', 100);
         $unitPrice = (float)$request->post('paid_tier_unit_price', 200.0);
         $currencySymbol = trim((string)$request->post('currency_symbol', '₹'));
-        $platformName = trim((string)$request->post('platform_name', 'DairyFlow SaaS'));
+        $platformName = trim((string)$request->post('platform_name', 'DoodhDesk SaaS'));
 
         $settings = [
             'free_customer_limit' => (string)$freeLimit,

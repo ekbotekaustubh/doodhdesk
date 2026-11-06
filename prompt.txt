@@ -1,4 +1,4 @@
-# Project Specification: DairyFlow Multi-Tenant SaaS (PHP 8.2 & MySQL)
+# Project Specification: DoodhDesk Multi-Tenant SaaS (PHP 8.2 & MySQL)
 
 ## 1. Project Overview & Business Model
 Build a multi-tenant, mobile-first SaaS web application for milkmen and dairy delivery businesses.

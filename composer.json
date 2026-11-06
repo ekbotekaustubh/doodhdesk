@@ -1,6 +1,6 @@
 {
-    "name": "dairyflow/saas",
-    "description": "DairyFlow Multi-Tenant SaaS for Milkmen and Dairy Delivery",
+    "name": "doodhdesk/saas",
+    "description": "DoodhDesk Multi-Tenant SaaS for Milkmen and Dairy Delivery",
     "type": "project",
     "require": {
         "php": ">=8.2",

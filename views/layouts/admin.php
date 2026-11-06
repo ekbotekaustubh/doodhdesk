@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= e($title ?? 'Super Admin - DairyFlow SaaS Platform') ?></title>
+    <title><?= e($title ?? 'Super Admin - DoodhDesk SaaS Platform') ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="<?= asset('public/assets/js/alpine.min.js') ?>" onerror="this.src='https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js'"></script>
 </head>
@@ -17,7 +17,7 @@
                 </span>
                 <div>
                     <div class="font-black tracking-tight text-white flex items-center gap-2">
-                        <span>DairyFlow Platform</span>
+                        <span>DoodhDesk Platform</span>
                         <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-purple-900/80 text-purple-300 border border-purple-700">Super Admin</span>
                     </div>
                     <div class="text-xs text-slate-400">Multi-Tenant SaaS Governance</div>
